@@ -110,15 +110,11 @@ export function Effects() {
       }
     }
 
-    // 洗澡泡泡
-    while (petRuntime.bubbleQueue.length) {
-      const at = petRuntime.bubbleQueue.shift()!;
-      spawn(bubbles, at, tmpV.set((Math.random() - 0.5) * 0.3, 0.4 + Math.random() * 0.3, (Math.random() - 0.5) * 0.3), 1.4);
-    }
-    if (pet.bathing && t > nextIdleBubble.current) {
-      nextIdleBubble.current = t + 0.25;
-      tmp.copy(petRuntime.position).add(tmpV.set((Math.random() - 0.5) * 0.9, 0.3 + Math.random() * 0.7, (Math.random() - 0.5) * 0.9));
-      spawn(bubbles, tmp, tmpV.set(0, 0.3, 0), 1.6);
+    // 搓泡泡時飄起來的泡泡
+    if (pet.bathing && petRuntime.bath.touching && pet.bathStage === 'wash' && t > nextIdleBubble.current) {
+      nextIdleBubble.current = t + 0.12;
+      tmp.copy(petRuntime.bath.point).add(tmpV.set((Math.random() - 0.5) * 0.2, 0.05, (Math.random() - 0.5) * 0.2));
+      spawn(bubbles, tmp, tmpV.set((Math.random() - 0.5) * 0.3, 0.35 + Math.random() * 0.3, (Math.random() - 0.5) * 0.2), 1.4);
     }
 
     // 睡覺 Zzz

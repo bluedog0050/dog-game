@@ -7,6 +7,7 @@ export const mat = (color: string, extra: THREE.MeshStandardMaterialParameters =
 export const FUR_CLEAN = new THREE.Color('#fffaf1');
 export const FUR_DIRTY = new THREE.Color('#c8b08a');
 export const FUR_SICK = new THREE.Color('#dfe3c4');
+export const FUR_WET = new THREE.Color('#cfd6de');
 
 export const M = {
   fur: mat('#fffaf1', { emissive: '#fff4e0', emissiveIntensity: 0.18 }),

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import * as G from '../game/pet';
 import { fetchTimeline } from '../game/fetch';
+import { BALANCE } from '../data/balance';
 import type { PetState } from '../game/types';
 import { loadSave, writeSave } from '../persistence/storage';
 import { setSoundEnabled, sfx } from '../audio/sfx';
@@ -24,7 +25,8 @@ interface GameStore {
   step: (dt: number) => void;
   doAction: (a: G.ActionKey) => void;
   touchPet: (part: 'head' | 'body') => void;
-  scrub: (pixels: number) => void;
+  /** 洗澡時手指按在寵物身上 dt 秒 */
+  bathTouch: (dt: number) => void;
   /** 瞄準模式下點畫面：把球丟到地板上的 (x, z) */
   throwBall: (x: number, z: number) => void;
   returnAfterAway: (seconds: number) => void;
@@ -86,7 +88,7 @@ export const useGameStore = create<GameStore>((set, get) => {
         return;
       }
       if (a === 'bath' && s.bathing) {
-        set({ pet: G.setBathing(s, false) });
+        toast(s.bathStage === 'wash' ? '用手指在牠身上搓泡泡 🫧' : '按住牠，慢慢吹乾 💨');
         return;
       }
       const reason = G.canDo(s, a);
@@ -106,8 +108,8 @@ export const useGameStore = create<GameStore>((set, get) => {
           toast('點一下畫面，把球丟過去 🎾');
           break;
         case 'bath':
-          set({ pet: G.setBathing(s, true) });
-          toast('用手指在牠身上搓一搓 🫧');
+          set({ pet: G.startBath(s) });
+          toast('用手指在牠身上搓泡泡 🫧');
           break;
         case 'sleep':
           set({ pet: G.toggleSleep(s) });
@@ -151,15 +153,18 @@ export const useGameStore = create<GameStore>((set, get) => {
       }
     },
 
-    scrub: (pixels) => {
+    bathTouch: (dt) => {
       const s = get().pet;
       if (!s.bathing) return;
-      const next = G.scrub(s, pixels);
-      set({ pet: next });
-      if (Math.random() < 0.25) sfx.pop();
-      if (!next.bathing) {
+      const { state, event } = G.bathTouch(s, dt);
+      set({ pet: state });
+      if (event === 'washDone') {
         sfx.ding();
-        float('✨ 洗乾淨了！');
+        toast('泡泡搓好了！按住牠吹乾 💨');
+      } else if (event === 'finished') {
+        sfx.ding();
+        setTimeout(() => sfx.bark(), 500);
+        float(`✨ 香香蓬蓬！💗+${BALANCE.bath.happinessBonus}`);
         set((x) => ({ heartBurst: x.heartBurst + 1 }));
       }
     },

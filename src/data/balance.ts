@@ -28,8 +28,16 @@ export const BALANCE = {
   feed: { hunger: 50, duration: 2.4 },
   play: { happiness: 40, energy: -10 },
   pet: { happiness: 8, duration: 1.2 },
-  /** 洗澡：手指在寵物身上滑動，每滑過 1 像素增加的清潔度 */
-  bathPerPixel: 0.12,
+  bath: {
+    /** 手指在寵物身上搓泡泡的累計秒數 */
+    washSeconds: 3,
+    /** 手指按住寵物吹乾的累計秒數 */
+    drySeconds: 10,
+    /** 洗完的快樂獎勵 */
+    happinessBonus: 10,
+    /** 甩乾身體的動畫秒數 */
+    shakeDuration: 1.1,
+  },
   medicine: { duration: 2.0 },
 
   sleep: {

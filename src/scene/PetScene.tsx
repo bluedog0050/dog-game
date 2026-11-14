@@ -5,6 +5,8 @@ import { Room } from './Room';
 import { Pet } from './Pet';
 import { Effects } from './Effects';
 import { AimHandler } from './AimHandler';
+import { BathController } from './BathController';
+import { BathEffects } from './BathEffects';
 import { useGameStore } from '../store/useGameStore';
 
 /** 依螢幕比例調整視角，直式手機也看得到整隻寵物與丟球範圍 */
@@ -74,10 +76,12 @@ export function PetScene() {
     >
       <CameraRig />
       <AimHandler />
+      <BathController />
       <Lights />
       <Room />
       <Pet />
       <Effects />
+      <BathEffects />
     </Canvas>
   );
 }

@@ -31,14 +31,21 @@ export function SpeechBubble() {
 
   let line = text;
   if (pet.bathing) {
-    line = `搓搓搓～ ${Math.floor(pet.stats.cleanliness)}%`;
+    const B = BALANCE.bath;
+    if (pet.bathStage === 'wash') {
+      const pct = Math.floor((pet.washTime / B.washSeconds) * 100);
+      line = pct === 0 ? '用手指在我身上搓泡泡～' : `搓泡泡中… ${pct}%`;
+    } else {
+      const pct = Math.floor((pet.dryTime / B.drySeconds) * 100);
+      line = pct === 0 ? '濕答答的…按住我吹乾' : `吹乾中… ${pct}%`;
+    }
   } else if (pet.aiming) {
     line = '快丟！快丟！（點畫面丟球）';
   } else if (key === 'sulking') {
     line = `${text}（再摸 ${BALANCE.sulk.petsToForgive - pet.sulkPets} 下）`;
   }
 
-  const icon = pet.bathing ? '🧼' : pet.aiming ? '🎾' : key.startsWith('act:') || key === 'happy' ? '' : ISSUE_INFO[top!].icon;
+  const icon = pet.bathing ? (pet.bathStage === 'wash' ? '🫧' : '💨') : pet.aiming ? '🎾' : key.startsWith('act:') || key === 'happy' ? '' : ISSUE_INFO[top!].icon;
   const others = issues.slice(1).filter((k) => k !== 'sleeping');
   const tone = top === 'sick' ? 'danger' : top === 'sulking' ? 'warn' : top && top !== 'sleeping' ? 'need' : 'ok';
 

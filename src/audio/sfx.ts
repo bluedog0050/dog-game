@@ -6,6 +6,7 @@ let enabled = true;
 
 export function setSoundEnabled(v: boolean) {
   enabled = v;
+  if (!v) loops?.stopAll();
 }
 
 export function unlockAudio() {
@@ -39,6 +40,60 @@ function tone(freq: number, dur: number, opts: { type?: OscillatorType; slideTo?
   osc.start(t0);
   osc.stop(t0 + dur + 0.02);
 }
+
+let noiseBuf: AudioBuffer | null = null;
+function noise(): AudioBuffer | null {
+  if (!ctx) return null;
+  if (!noiseBuf) {
+    noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  return noiseBuf;
+}
+
+/** 持續的濾波噪音（水聲、吹風機聲） */
+function makeLoop(type: BiquadFilterType, freq: number, vol: number) {
+  let src: AudioBufferSourceNode | null = null;
+  let gain: GainNode | null = null;
+  return {
+    start() {
+      if (!enabled || !ctx || src) return;
+      const buf = noise();
+      if (!buf) return;
+      src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      const f = ctx.createBiquadFilter();
+      f.type = type;
+      f.frequency.value = freq;
+      gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(vol, ctx.currentTime + 0.15);
+      src.connect(f).connect(gain).connect(ctx.destination);
+      src.start();
+    },
+    stop() {
+      if (!ctx || !src || !gain) return;
+      const s = src;
+      gain.gain.cancelScheduledValues(ctx.currentTime);
+      gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.2);
+      s.stop(ctx.currentTime + 0.25);
+      src = null;
+      gain = null;
+    },
+  };
+}
+
+export const loops = {
+  water: makeLoop('bandpass', 2400, 0.05),
+  dryer: makeLoop('lowpass', 900, 0.07),
+  stopAll() {
+    loops.water.stop();
+    loops.dryer.stop();
+  },
+};
 
 export const sfx = {
   bark() {

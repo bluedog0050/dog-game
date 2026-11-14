@@ -19,6 +19,9 @@ export function createPet(): PetState {
     activityLeft: 0,
     activityStartedAt: 0,
     bathing: false,
+    bathStage: 'wash',
+    washTime: 0,
+    dryTime: 0,
     aiming: false,
     ballTarget: null,
     time: 0,
@@ -111,6 +114,10 @@ export type ActionKey = 'feed' | 'play' | 'bath' | 'sleep' | 'medicine';
 
 /** 回傳 null 代表可以做；回傳字串代表不能做的原因 */
 export function canDo(s: PetState, a: ActionKey): string | null {
+  // 洗澡流程中只能繼續洗（生病時仍可餵藥）
+  if (s.bathing && a !== 'bath' && !(a === 'medicine' && s.sick)) {
+    return s.bathStage === 'wash' ? '先幫牠把泡泡搓完' : '先幫牠吹乾吧';
+  }
   if (isBusy(s)) return '牠正在忙喔';
   if (s.sleeping && a !== 'sleep') return '牠在睡覺，先叫醒牠吧';
   switch (a) {
@@ -217,21 +224,66 @@ export function giveMedicine(s: PetState): PetState {
   return { ...next, sick: false, zeroFor: { ...s.zeroFor, hunger: 0, cleanliness: 0 } };
 }
 
-export function setBathing(s: PetState, on: boolean): PetState {
-  if (on && canDo(s, 'bath')) return s;
-  return { ...s, bathing: on, aiming: on ? false : s.aiming };
+/** 開始洗澡：進入搓泡泡階段 */
+export function startBath(s: PetState): PetState {
+  if (s.bathing || canDo(s, 'bath')) return s;
+  return { ...s, bathing: true, bathStage: 'wash', washTime: 0, dryTime: 0, aiming: false };
 }
 
-/** 洗澡時手指滑動的距離（像素） */
-export function scrub(s: PetState, pixels: number): PetState {
-  if (!s.bathing) return s;
-  const cleanliness = clamp(s.stats.cleanliness + pixels * BALANCE.bathPerPixel);
+export type BathEvent = 'none' | 'washDone' | 'finished';
+
+/**
+ * 手指按在寵物身上 dt 秒。
+ * 搓泡泡：3 秒內清潔度升到 100，滿 3 秒換吹乾。
+ * 吹乾：滿 10 秒完成，快樂 +10，然後甩一甩身體。
+ */
+export function bathTouch(s: PetState, dt: number): { state: PetState; event: BathEvent } {
+  if (!s.bathing || dt <= 0) return { state: s, event: 'none' };
+  const B = BALANCE.bath;
+
+  if (s.bathStage === 'wash') {
+    const remaining = Math.max(0, B.washSeconds - s.washTime);
+    const step = Math.min(dt, remaining);
+    const k = remaining > 0 ? step / remaining : 1;
+    const cleanliness = clamp(s.stats.cleanliness + (100 - s.stats.cleanliness) * k);
+    const washTime = s.washTime + step;
+    const done = washTime >= B.washSeconds - 1e-9;
+    return {
+      state: {
+        ...s,
+        washTime,
+        bathStage: done ? 'dry' : 'wash',
+        stats: { ...s.stats, cleanliness: done ? 100 : cleanliness },
+        zeroFor: { ...s.zeroFor, cleanliness: 0 },
+      },
+      event: done ? 'washDone' : 'none',
+    };
+  }
+
+  const dryTime = Math.min(B.drySeconds, s.dryTime + dt);
+  if (dryTime < B.drySeconds) return { state: { ...s, dryTime }, event: 'none' };
+
+  const next = startActivity(s, 'shake', B.shakeDuration);
   return {
-    ...s,
-    stats: { ...s.stats, cleanliness },
-    zeroFor: { ...s.zeroFor, cleanliness: 0 },
-    bathing: cleanliness < 100,
+    state: {
+      ...next,
+      bathing: false,
+      bathStage: 'wash',
+      washTime: 0,
+      dryTime: 0,
+      stats: { ...s.stats, happiness: clamp(s.stats.happiness + B.happinessBonus) },
+      zeroFor: { ...s.zeroFor, happiness: 0 },
+    },
+    event: 'finished',
   };
+}
+
+/** 濕度 0~1：搓泡泡時越來越濕，吹乾時越來越乾 */
+export function wetness(s: PetState): number {
+  if (!s.bathing) return 0;
+  const B = BALANCE.bath;
+  if (s.bathStage === 'wash') return Math.min(1, s.washTime / B.washSeconds);
+  return 1 - Math.min(1, s.dryTime / B.drySeconds);
 }
 
 /** 摸摸：head = 摸頭，否則摸身體 */

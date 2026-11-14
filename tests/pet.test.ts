@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  createPet, tick, feed, startAiming, throwBall, clampBallTarget, petPet, giveMedicine, toggleSleep, scrub, setBathing,
-  getIssues, resetForReturn,
+  createPet, tick, feed, startAiming, throwBall, clampBallTarget, petPet, giveMedicine, toggleSleep, 
+  getIssues, resetForReturn, startBath, bathTouch, wetness, canDo,
 } from '../src/game/pet';
 import { BALANCE, SECONDS_TO_EMPTY } from '../src/data/balance';
 import { fetchTimeline } from '../src/game/fetch';
@@ -74,11 +74,37 @@ describe('pet logic', () => {
     expect(p.stats.energy).toBeGreaterThan(95);
   });
 
-  it('bath scrubbing reaches 100 and ends bathing', () => {
-    let p = setBathing(createPet(), true);
-    p = scrub(p, 1000);
+  it('bath: 3s of washing fills cleanliness, then 10s of drying finishes', () => {
+    let p = startBath(createPet());
+    expect(p.bathing).toBe(true);
+    expect(p.bathStage).toBe('wash');
+    expect(canDo(p, 'feed')).not.toBeNull(); // 洗澡中不能做別的事
+
+    let ev = 'none';
+    for (let i = 0; i < 15; i++) ({ state: p, event: ev } = bathTouch(p, 0.1));
+    expect(p.washTime).toBeCloseTo(1.5);
+    expect(p.stats.cleanliness).toBeCloseTo(75, 0); // 50 → 100 的一半
+    expect(wetness(p)).toBeCloseTo(0.5);
+
+    for (let i = 0; i < 15; i++) ({ state: p, event: ev } = bathTouch(p, 0.1));
+    expect(ev).toBe('washDone');
+    expect(p.bathStage).toBe('dry');
     expect(p.stats.cleanliness).toBe(100);
+
+    // 手指沒按著，時間過去不會乾
+    p = run(p, 5);
+    expect(p.bathing).toBe(true);
+    expect(p.dryTime).toBe(0);
+
+    for (let i = 0; i < 99; i++) ({ state: p } = bathTouch(p, 0.1));
+    expect(p.bathing).toBe(true);
+    const happyBefore = p.stats.happiness;
+    ({ state: p, event: ev } = bathTouch(p, 0.2));
+    expect(ev).toBe('finished');
     expect(p.bathing).toBe(false);
+    expect(p.activity).toBe('shake');
+    expect(p.stats.happiness).toBeCloseTo(happyBefore + 10);
+    expect(wetness(p)).toBe(0);
   });
 
   it('ball target is clamped to the room and away from the pet', () => {

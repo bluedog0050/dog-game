@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
-import { FUR_CLEAN, FUR_DIRTY, FUR_SICK, GEO, M, mat } from './materials';
+import { FUR_CLEAN, FUR_DIRTY, FUR_SICK, FUR_WET, GEO, M, mat } from './materials';
 import { petRuntime } from './petRuntime';
 import { useGameStore } from '../store/useGameStore';
+import { wetness } from '../game/pet';
 import { BALANCE } from '../data/balance';
 import type { Activity } from '../game/types';
 import { FETCH, fetchTimeline, type FetchTimeline } from '../game/fetch';
@@ -56,6 +57,8 @@ export function Pet() {
     nextYawn: 3,
     yawnStart: -10,
     lieAmt: 0,
+    nextWetShake: 0,
+    wetShakeStart: -10,
     faceY: 0,
     furColor: new THREE.Color(),
   });
@@ -73,17 +76,6 @@ export function Pet() {
 
 
   // ---------- 觸控 ----------
-  const dragging = useRef<{ x: number; y: number } | null>(null);
-  useEffect(() => {
-    const up = () => (dragging.current = null);
-    window.addEventListener('pointerup', up);
-    window.addEventListener('pointercancel', up);
-    return () => {
-      window.removeEventListener('pointerup', up);
-      window.removeEventListener('pointercancel', up);
-    };
-  }, []);
-
   const partOf = (o: THREE.Object3D | null): 'head' | 'body' => {
     while (o) {
       if (o.userData.part) return o.userData.part;
@@ -96,31 +88,13 @@ export function Pet() {
     const st = useGameStore.getState();
     if (st.pet.aiming) return; // 瞄準時點到狗也算丟球，交給 AimHandler
     e.stopPropagation();
-    if (st.pet.bathing) {
-      dragging.current = { x: e.nativeEvent.clientX, y: e.nativeEvent.clientY };
-      petRuntime.bubbleQueue.push(e.point.clone());
-      return;
-    }
+    if (st.pet.bathing) return; // 洗澡的觸控交給 BathController
     st.touchPet(partOf(e.object));
   };
 
-  const onMove = (e: ThreeEvent<PointerEvent>) => {
-    const st = useGameStore.getState();
-    if (!st.pet.bathing) return;
-    const { clientX, clientY } = e.nativeEvent;
-    if (!dragging.current) {
-      // 手指從外面滑進來也算
-      if (e.nativeEvent.buttons === 0 && e.nativeEvent.pointerType === 'mouse') return;
-      dragging.current = { x: clientX, y: clientY };
-      return;
-    }
-    const d = Math.hypot(clientX - dragging.current.x, clientY - dragging.current.y);
-    dragging.current = { x: clientX, y: clientY };
-    if (d > 0) {
-      st.scrub(d);
-      if (Math.random() < 0.35) petRuntime.bubbleQueue.push(e.point.clone());
-    }
-  };
+  useEffect(() => {
+    petRuntime.hitTargets = [torso.current, head.current];
+  }, []);
 
   // ---------- 每幀動畫 ----------
   useFrame((state, rawDt) => {
@@ -159,6 +133,10 @@ export function Pet() {
     let legSwing = 0;
     let scratchLeg = 0;
     let lie = lying ? 1 : 0;
+    let bodyRotY = 0;
+    let headPY = 0, headPZ = 0; // 頭的位移（吃飯時往前伸）
+    let earFlutter = 0;
+    let shake = 0; // 甩身體強度 0~1
 
     // --- 眨眼 ---
     if (t > a.nextBlink) {
@@ -247,6 +225,34 @@ export function Pet() {
       }
     }
 
+    // --- 洗澡 ---
+    const wetTarget = wetness(s);
+    petRuntime.wet = damp(petRuntime.wet, wetTarget, 4, dt);
+    const touching = s.bathing && petRuntime.bath.touching;
+    if (s.bathing) {
+      tongueOut = 0;
+      if (touching && s.bathStage === 'wash') {
+        eyeOpen = 0.25; // 搓泡泡很舒服
+        tongueOut = 1;
+        wagSpeed = 16;
+      } else if (touching) {
+        eyeOpen = 0.4; // 被吹風吹得瞇眼
+        earFlutter = 1;
+        wagSpeed = 10;
+      } else {
+        earX = 0.35; // 濕答答
+        wagSpeed = 2;
+        wagAmp = 0.1;
+      }
+      // 好一陣子沒碰牠：自己甩身體噴水
+      if (!touching && petRuntime.wet > 0.25 && t - petRuntime.bath.lastTouch > 3 && t > a.nextWetShake) {
+        a.wetShakeStart = t;
+        a.nextWetShake = t + 4 + Math.random() * 2;
+      }
+      const ws = t - a.wetShakeStart;
+      if (ws < 0.9) shake = 1 - ws / 0.9;
+    }
+
     // --- 動作 ---
     let ballVisible = false;
     let bowlVisible = 0;
@@ -255,7 +261,12 @@ export function Pet() {
     switch (act) {
       case 'eating': {
         bowlVisible = 1;
-        headX = 0.65 + Math.abs(Math.sin(at * 9)) * 0.12;
+        // 身體前傾、頭往前下方伸出，嘴巴靠近碗（不會埋進胸毛）
+        const reach = ease(Math.min(1, at / 0.3));
+        bodyRotX = 0.12 * reach;
+        headPY = -0.34 * reach;
+        headPZ = 0.26 * reach;
+        headX = (0.5 + Math.abs(Math.sin(at * 9)) * 0.12) * reach;
         headZ = 0;
         mouthOpen = Math.abs(Math.sin(at * 9)) * 0.7;
         wagSpeed = 16;
@@ -281,6 +292,13 @@ export function Pet() {
         eyeOpen = 0.2;
         tongueOut = 1;
         wagSpeed = 20;
+        break;
+      }
+      case 'shake': {
+        // 洗完甩一甩，毛變蓬鬆
+        shake = 1 - at / BALANCE.bath.shakeDuration;
+        eyeOpen = 0.2;
+        tongueOut = 1;
         break;
       }
       case 'refuse': {
@@ -395,17 +413,26 @@ export function Pet() {
     b.position.y = damp(b.position.y, bodyY + runBob - L * 0.2, act === 'petBody' || bodyY > 0 ? 30 : 10, dt);
     b.rotation.z = act === 'petBody' ? bodyRotZ : damp(b.rotation.z, bodyRotZ, 10, dt);
     b.rotation.x = damp(b.rotation.x, bodyRotX, 8, dt);
+    if (shake > 0) bodyRotY = Math.sin(t * 38) * 0.45 * shake;
+    b.rotation.y = damp(b.rotation.y, bodyRotY, 30, dt);
+    petRuntime.shaking = shake > 0.1;
 
     // 呼吸
     const breath = 1 + Math.sin(t * (s.sleeping ? 1.6 : 3)) * (s.sleeping ? 0.035 : 0.02);
-    torso.current.scale.set(breath, breath, 1);
+    // 濕毛會貼身變小一圈；甩乾後恢復蓬鬆
+    const W = petRuntime.wet;
+    const puff = act === 'shake' ? 1 + Math.sin(Math.min(1, at / BALANCE.bath.shakeDuration) * Math.PI) * 0.08 : 1;
+    const wetBody = (1 - 0.16 * W) * puff;
+    torso.current.scale.set(breath * wetBody, breath * (1 - 0.1 * W) * puff, wetBody);
+    tail.current.scale.setScalar((1 - 0.35 * W) * puff);
+    head.current.scale.setScalar((1 - 0.07 * W) * puff);
 
     const h = head.current;
     h.rotation.x = damp(h.rotation.x, headX + L * 0.15, 8, dt);
-    h.rotation.y = damp(h.rotation.y, headY, act === 'refuse' || act === 'medicine' ? 30 : 8, dt);
+    h.rotation.y = damp(h.rotation.y, headY - bodyRotY * 0.6, act === 'refuse' || act === 'medicine' || shake > 0 ? 30 : 8, dt);
     h.rotation.z = damp(h.rotation.z, headZ, 6, dt);
-    h.position.y = 0.98 - L * 0.14;
-    h.position.z = 0.32 + L * 0.08;
+    h.position.y = damp(h.position.y, 0.98 - L * 0.14 + headPY, 10, dt);
+    h.position.z = damp(h.position.z, 0.32 + L * 0.08 + headPZ, 10, dt);
 
     // 尾巴：左右搖
     tail.current.rotation.z = Math.sin(t * wagSpeed) * wagAmp;
@@ -414,8 +441,9 @@ export function Pet() {
     // 耳朵
     earL.current.rotation.x = damp(earL.current.rotation.x, earX, 6, dt);
     earR.current.rotation.x = damp(earR.current.rotation.x, earX, 6, dt);
-    earL.current.rotation.z = -0.22 + Math.sin(t * 3) * 0.03;
-    earR.current.rotation.z = 0.22 - Math.sin(t * 3 + 1) * 0.03;
+    const flut = earFlutter ? Math.sin(t * 45) * 0.18 : 0;
+    earL.current.rotation.z = -0.22 + Math.sin(t * 3) * 0.03 + flut;
+    earR.current.rotation.z = 0.22 - Math.sin(t * 3 + 1) * 0.03 - flut;
 
     // 眼睛
     const ey = damp(eyeL.current.scale.y, eyeOpen, 25, dt);
@@ -442,7 +470,11 @@ export function Pet() {
     const dirtyAmt = Math.max(0, (50 - stats.cleanliness) / 50);
     a.furColor.copy(FUR_CLEAN).lerp(FUR_DIRTY, dirtyAmt * 0.7);
     if (s.sick) a.furColor.lerp(FUR_SICK, 0.6);
+    a.furColor.lerp(FUR_WET, W * 0.55);
     (M.fur as THREE.MeshStandardMaterial).color.lerp(a.furColor, Math.min(1, dt * 3));
+    // 濕的毛有光澤
+    (M.fur as THREE.MeshStandardMaterial).roughness = 0.85 - 0.5 * W;
+    (M.furShade as THREE.MeshStandardMaterial).roughness = 0.85 - 0.5 * W;
 
     // 共享座標給特效
     h.updateWorldMatrix(true, false);
@@ -469,7 +501,7 @@ export function Pet() {
       <group ref={root}>
         <group ref={body}>
           {/* 身體：一大團蓬鬆的毛 */}
-          <group ref={torso} position={[0, 0.5, 0]} userData={{ part: 'body' }} onPointerDown={onDown} onPointerMove={onMove}>
+          <group ref={torso} position={[0, 0.5, 0]} userData={{ part: 'body' }} onPointerDown={onDown}>
             <Fluff p={[0, 0, 0]} s={[0.5, 0.42, 0.58]} />
             <Fluff p={[0, 0.08, 0.28]} s={[0.42, 0.42, 0.36]} />
             {/* 胸前鬃毛 */}
@@ -504,7 +536,7 @@ export function Pet() {
           </group>
 
           {/* 頭 */}
-          <group ref={head} position={[0, 0.98, 0.32]} userData={{ part: 'head' }} onPointerDown={onDown} onPointerMove={onMove}>
+          <group ref={head} position={[0, 0.98, 0.32]} userData={{ part: 'head' }} onPointerDown={onDown}>
             <Fluff p={[0, 0, 0]} s={[0.4, 0.37, 0.36]} />
             {/* 臉頰的毛 */}
             <Fluff p={[0.27, -0.12, 0.04]} s={0.21} />
@@ -556,7 +588,7 @@ export function Pet() {
       </mesh>
 
       {/* 飯碗 */}
-      <group ref={bowl} position={[0, 0, 0.78]} visible={false}>
+      <group ref={bowl} position={[0, 0, 0.92]} visible={false}>
         <mesh material={bowlMat} position={[0, 0.07, 0]} castShadow>
           <cylinderGeometry args={[0.22, 0.16, 0.14, 10]} />
         </mesh>

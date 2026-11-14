@@ -10,7 +10,10 @@ export type Activity =
   | 'petHead'
   | 'petBody'
   | 'medicine'
-  | 'refuse';
+  | 'refuse'
+  | 'shake';
+
+export type BathStage = 'wash' | 'dry';
 
 export interface PetState {
   stats: Stats;
@@ -26,8 +29,13 @@ export interface PetState {
   activityLeft: number;
   /** 動作開始的遊戲時間（秒），讓 3D 動畫知道進度 */
   activityStartedAt: number;
-  /** 洗澡模式 */
+  /** 洗澡流程進行中（搓泡泡 → 吹乾，完成前不能做其他事） */
   bathing: boolean;
+  bathStage: BathStage;
+  /** 已搓泡泡秒數 */
+  washTime: number;
+  /** 已吹乾秒數 */
+  dryTime: number;
   /** 瞄準模式：等玩家點畫面丟球 */
   aiming: boolean;
   /** 球的落點（丟球動作進行中才有） */

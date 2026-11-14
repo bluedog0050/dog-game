@@ -470,9 +470,36 @@ button {
 }
 
 .app.bathing .scene {
-  cursor: grab;
+  cursor: pointer;
 }
 
 .app.aiming .scene {
   cursor: crosshair;
+}
+
+.action.bounce {
+  animation: bounce 0.9s ease-in-out infinite;
+}
+
+@keyframes bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-6px);
+  }
+  50% {
+    transform: translateY(0);
+  }
+  65% {
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action.bounce,
+  .action.urgent {
+    animation: none;
+  }
 }
