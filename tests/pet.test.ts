@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createPet, tick, feed, startAiming, throwBall, clampBallTarget, petPet, giveMedicine, toggleSleep, 
-  getIssues, resetForReturn, startBath, bathTouch, wetness, canDo,
+  getIssues, resetForReturn, pickPetMove, startBath, bathTouch, wetness, canDo,
 } from '../src/game/pet';
 import { BALANCE, SECONDS_TO_EMPTY } from '../src/data/balance';
 import { fetchTimeline } from '../src/game/fetch';
@@ -118,6 +118,25 @@ describe('pet logic', () => {
     const far = fetchTimeline({ x: 3, z: -2.5 });
     expect(far.total).toBeGreaterThan(near.total);
     expect(near.arrive).toBeGreaterThan(near.land);
+  });
+
+  it('petting picks a random move from the part pool, never repeating the last one', () => {
+    for (let i = 0; i < 200; i++) {
+      const last = (['petHead', 'jump', 'nuzzle'] as const)[i % 3];
+      const { move } = pickPetMove('head', last);
+      expect(['petHead', 'jump', 'nuzzle']).toContain(move);
+      expect(move).not.toBe(last);
+      const body = pickPetMove('body', 'jump').move;
+      expect(['chaseTail', 'playBow']).toContain(body);
+    }
+    // 跳躍：亂數 < 30% 時變成空中轉圈
+    expect(pickPetMove('body', 'chaseTail', () => 0).activity).toBe('jumpSpin');
+    expect(pickPetMove('body', 'chaseTail', (() => { const r = [0, 0.9]; let i = 0; return () => r[i++]; })()).activity).toBe('jump');
+    // 摸的時候快樂 +8，並記下這次的動作
+    const { state, gained } = petPet(createPet(), 'body', () => 0.99);
+    expect(gained).toBe(8);
+    expect(state.lastPetMove).toBe('playBow');
+    expect(state.activity).toBe('playBow');
   });
 
   it('issues are ordered by priority', () => {

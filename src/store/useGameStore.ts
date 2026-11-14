@@ -147,7 +147,9 @@ export const useGameStore = create<GameStore>((set, get) => {
         return;
       }
       if (gained > 0) {
-        sfx.happy();
+        // 轉圈跳、伸懶腰會叫一聲，其他動作是開心的音效
+        if (state.activity === 'jumpSpin' || state.activity === 'playBow') sfx.bark();
+        else sfx.happy();
         float(`💗 +${gained}`);
         set((x) => ({ heartBurst: x.heartBurst + 1 }));
       }

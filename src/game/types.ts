@@ -7,13 +7,20 @@ export type Activity =
   | 'idle'
   | 'eating'
   | 'playing'
-  | 'petHead'
-  | 'petBody'
+  | 'petHead' // 瞇眼歪頭
+  | 'jump' // 原地跳躍
+  | 'jumpSpin' // 跳高並在空中轉一圈
+  | 'nuzzle' // 蹭蹭
+  | 'chaseTail' // 追尾巴轉圈
+  | 'playBow' // 伸懶腰
   | 'medicine'
   | 'refuse'
   | 'shake';
 
 export type BathStage = 'wash' | 'dry';
+
+/** 被摸時的隨機動作 */
+export type PetMove = 'petHead' | 'jump' | 'nuzzle' | 'chaseTail' | 'playBow';
 
 export interface PetState {
   stats: Stats;
@@ -40,6 +47,8 @@ export interface PetState {
   aiming: boolean;
   /** 球的落點（丟球動作進行中才有） */
   ballTarget: { x: number; z: number } | null;
+  /** 上一次被摸時做的動作（避免連續重複） */
+  lastPetMove: PetMove | null;
   /** 遊戲內經過的總秒數 */
   time: number;
 }

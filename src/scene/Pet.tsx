@@ -125,6 +125,11 @@ export function Pet() {
     let headPY = 0, headPZ = 0; // 頭的位移（吃飯時往前伸）
     let earFlutter = 0;
     let shake = 0; // 甩身體強度 0~1
+    let spinY: number | null = null; // 直接指定身體的水平旋轉（轉圈用）
+    let squash = 0; // 落地壓扁 0~1
+    let legTuck = 0; // 空中縮腳 0~1
+    let bow = 0; // 伸懶腰姿勢 0~1
+    let fast = false; // 身體高度要快速跟上（跳躍用）
 
     // --- 眨眼 ---
     if (t > a.nextBlink) {
@@ -272,14 +277,80 @@ export function Pet() {
         bodyY = Math.max(0, Math.sin(at * 5)) * 0.1;
         break;
       }
-      case 'petBody': {
-        // 原地翻滾
-        const p = Math.min(1, at / BALANCE.pet.duration);
-        bodyRotZ = ease(p) * TAU;
-        bodyY = Math.sin(p * Math.PI) * 0.35;
-        eyeOpen = 0.2;
+      case 'jump':
+      case 'jumpSpin': {
+        // 蹲低蓄力 → 起跳（耳朵往後飛、縮腳）→ 落地壓扁再彈回
+        const spin = act === 'jumpSpin';
+        const dur = BALANCE.pet.durations[act];
+        const crouchEnd = spin ? 0.3 : 0.22;
+        const landAt = dur - (spin ? 0.3 : 0.25);
+        const height = spin ? 0.7 : 0.48;
+        fast = true;
+        if (at < crouchEnd) {
+          const q = at / crouchEnd;
+          bodyY = -0.1 * Math.sin(q * Math.PI * 0.5);
+          squash = 0.6 * q;
+        } else if (at < landAt) {
+          const q = (at - crouchEnd) / (landAt - crouchEnd);
+          bodyY = Math.sin(q * Math.PI) * height;
+          legTuck = Math.sin(q * Math.PI);
+          earX = -0.6 * Math.sin(q * Math.PI);
+          if (spin) spinY = ease(q) * TAU;
+        } else {
+          const q = (at - landAt) / (dur - landAt);
+          squash = Math.sin(q * Math.PI) * (1 - q * 0.3);
+          bodyY = -0.06 * Math.sin(q * Math.PI);
+        }
+        eyeOpen = 0.25;
+        tongueOut = 1;
+        wagSpeed = 22;
+        wagAmp = 0.6;
+        break;
+      }
+      case 'nuzzle': {
+        // 頭左右磨蹭你的手
+        const q = Math.min(1, at / BALANCE.pet.durations.nuzzle);
+        const fade = Math.sin(q * Math.PI);
+        headZ = Math.sin(at * 9) * 0.32 * fade;
+        headY = Math.sin(at * 9 + 0.6) * 0.25 * fade;
+        headX = -0.15 * fade;
+        bodyRotZ = Math.sin(at * 9) * 0.05 * fade;
+        eyeOpen = 0.12;
         tongueOut = 1;
         wagSpeed = 20;
+        wagAmp = 0.55;
+        break;
+      }
+      case 'chaseTail': {
+        // 原地追尾巴轉 2 圈，最後暈暈的晃一下
+        const turnEnd = 1.35;
+        if (at < turnEnd) {
+          const q = at / turnEnd;
+          spinY = -ease(q) * TAU * 2;
+          headY = -0.6; // 頭轉向尾巴
+          headX = 0.15;
+          legSwing = 1;
+          wagSpeed = 26;
+          wagAmp = 0.7;
+        } else {
+          const q = (at - turnEnd) / (BALANCE.pet.durations.chaseTail - turnEnd);
+          bodyRotZ = Math.sin(q * Math.PI * 3) * 0.12 * (1 - q);
+          headZ = Math.sin(q * Math.PI * 3 + 1) * 0.3 * (1 - q);
+          eyeOpen = 0.3;
+        }
+        tongueOut = 1;
+        break;
+      }
+      case 'playBow': {
+        // 伸懶腰：前腳往前伸、屁股翹高、尾巴猛搖
+        const dur = BALANCE.pet.durations.playBow;
+        bow = at < 0.3 ? ease(at / 0.3) : at > dur - 0.35 ? ease((dur - at) / 0.35) : 1;
+        bodyRotZ = Math.sin(at * 14) * 0.05 * bow; // 屁股扭扭
+        headX = -0.45 * bow; // 抬頭看你
+        eyeOpen = 0.9;
+        tongueOut = 1;
+        wagSpeed = 28;
+        wagAmp = 0.75;
         break;
       }
       case 'shake': {
@@ -403,11 +474,19 @@ export function Pet() {
 
     const b = body.current;
     const runBob = legSwing ? Math.abs(Math.sin(t * 18)) * 0.08 : 0;
-    b.position.y = damp(b.position.y, bodyY + runBob - L * 0.2, act === 'petBody' || bodyY > 0 ? 30 : 10, dt);
-    b.rotation.z = act === 'petBody' ? bodyRotZ : damp(b.rotation.z, bodyRotZ, 10, dt);
-    b.rotation.x = damp(b.rotation.x, bodyRotX, 8, dt);
+    // 伸懶腰：身體前傾（前低後高），整體稍微抬高避免前胸碰到地板
+    bodyRotX += 0.4 * bow;
+    bodyY += 0.08 * bow;
+    b.position.y = damp(b.position.y, bodyY + runBob - L * 0.2, fast || bodyY > 0 ? 30 : 10, dt);
+    b.rotation.z = damp(b.rotation.z, bodyRotZ, 10, dt);
+    b.rotation.x = damp(b.rotation.x, bodyRotX, bow > 0 ? 14 : 8, dt);
     if (shake > 0) bodyRotY = Math.sin(t * 38) * 0.45 * shake;
-    b.rotation.y = damp(b.rotation.y, bodyRotY, 30, dt);
+    if (spinY !== null) {
+      b.rotation.y = spinY;
+    } else {
+      // 轉完圈後角度可能是 2π 的倍數，先換算回 -π~π 才不會倒轉回去
+      b.rotation.y = damp(wrapAngle(b.rotation.y), bodyRotY, 30, dt);
+    }
     petRuntime.shaking = shake > 0.1;
 
     // 呼吸
@@ -416,7 +495,9 @@ export function Pet() {
     const W = petRuntime.wet;
     const puff = act === 'shake' ? 1 + Math.sin(Math.min(1, at / BALANCE.bath.shakeDuration) * Math.PI) * 0.08 : 1;
     const wetBody = (1 - 0.16 * W) * puff;
-    torso.current.scale.set(breath * wetBody, breath * (1 - 0.1 * W) * puff, wetBody);
+    const sq = 1 - 0.18 * squash; // 落地壓扁：變矮變寬
+    const sw = 1 + 0.1 * squash;
+    torso.current.scale.set(breath * wetBody * sw, breath * (1 - 0.1 * W) * puff * sq, wetBody * sw);
     tail.current.scale.setScalar((1 - 0.35 * W) * puff);
     head.current.scale.setScalar((1 - 0.07 * W) * puff);
 
@@ -456,6 +537,10 @@ export function Pet() {
       let rx = legSwing ? Math.sin(t * 18 + (front ? 0 : Math.PI) + (side > 0 ? 0 : Math.PI / 2)) * 0.8 : 0;
       if (scratchLeg && i === 2) rx = -0.9 + Math.sin(t * 40) * 0.4;
       rx += L * (front ? -1.3 : 1.3);
+      // 空中縮腳：前腳往後收、後腳往前收
+      rx += legTuck * (front ? 0.8 : -0.8);
+      // 伸懶腰：前腳往前伸直貼地，後腳抵銷身體前傾保持直立
+      rx += bow * (front ? -1.2 : -0.4);
       lg.current.rotation.x = damp(lg.current.rotation.x, rx, 20, dt);
     });
 

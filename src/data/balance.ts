@@ -27,7 +27,16 @@ export const BALANCE = {
 
   feed: { hunger: 50, duration: 2.4 },
   play: { happiness: 40, energy: -10 },
-  pet: { happiness: 8, duration: 1.2 },
+  pet: {
+    happiness: 8,
+    /** 點頭、點身體各自的隨機動作 */
+    headMoves: ['petHead', 'jump', 'nuzzle'],
+    bodyMoves: ['jump', 'chaseTail', 'playBow'],
+    /** 跳躍時變成「空中轉一圈」的機率 */
+    spinChance: 0.3,
+    /** 各動作秒數 */
+    durations: { petHead: 1.2, jump: 1.0, jumpSpin: 1.3, nuzzle: 1.3, chaseTail: 1.8, playBow: 1.6 },
+  },
   bath: {
     /** 手指在寵物身上搓泡泡的累計秒數 */
     washSeconds: 3,

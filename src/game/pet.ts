@@ -1,6 +1,6 @@
 // 純遊戲邏輯：不依賴 React、3D 或瀏覽器，可單獨測試。
 import { BALANCE, DECAY_PER_SEC, type StatKey } from '../data/balance';
-import type { Activity, IssueKey, PetState } from './types';
+import type { Activity, IssueKey, PetMove, PetState } from './types';
 import { fetchTimeline, type Point } from './fetch';
 
 const clamp = (v: number) => Math.max(0, Math.min(100, v));
@@ -24,6 +24,7 @@ export function createPet(): PetState {
     dryTime: 0,
     aiming: false,
     ballTarget: null,
+    lastPetMove: null,
     time: 0,
   };
 }
@@ -105,8 +106,24 @@ function startActivity(s: PetState, activity: Activity, duration: number): PetSt
   return { ...s, activity, activityLeft: duration, activityStartedAt: s.time };
 }
 
-export const isBusy = (s: PetState) =>
-  s.activityLeft > 0 && s.activity !== 'petHead' && s.activity !== 'petBody';
+/** 被摸的動作可以隨時被打斷（再點一下就換下一個動作） */
+const PET_ACTIVITIES: Activity[] = ['petHead', 'jump', 'jumpSpin', 'nuzzle', 'chaseTail', 'playBow'];
+export const isPetActivity = (a: Activity) => PET_ACTIVITIES.includes(a);
+
+export const isBusy = (s: PetState) => s.activityLeft > 0 && !isPetActivity(s.activity);
+
+/** 從清單中隨機挑一個動作，不會跟上一次一樣 */
+export function pickPetMove(
+  part: 'head' | 'body',
+  last: PetMove | null,
+  rand: () => number = Math.random,
+): { move: PetMove; activity: Activity } {
+  const pool = (part === 'head' ? BALANCE.pet.headMoves : BALANCE.pet.bodyMoves) as readonly PetMove[];
+  const choices = pool.filter((m) => m !== last);
+  const move = choices[Math.floor(rand() * choices.length)] ?? pool[0];
+  const activity: Activity = move === 'jump' && rand() < BALANCE.pet.spinChance ? 'jumpSpin' : move;
+  return { move, activity };
+}
 
 // ---------- 可執行動作 ----------
 
@@ -287,14 +304,18 @@ export function wetness(s: PetState): number {
 }
 
 /** 摸摸：head = 摸頭，否則摸身體 */
-export function petPet(s: PetState, part: 'head' | 'body'): { state: PetState; gained: number } {
+export function petPet(
+  s: PetState,
+  part: 'head' | 'body',
+  rand: () => number = Math.random,
+): { state: PetState; gained: number } {
   if (s.sleeping) return { state: wake(s), gained: 0 };
   if (s.bathing || s.aiming || isBusy(s)) return { state: s, gained: 0 };
 
   if (s.sulking) {
     const sulkPets = s.sulkPets + 1;
     if (sulkPets >= BALANCE.sulk.petsToForgive) {
-      const next = startActivity(s, 'petHead', BALANCE.pet.duration);
+      const next = startActivity(s, 'jump', BALANCE.pet.durations.jump);
       return {
         state: {
           ...next,
@@ -311,10 +332,12 @@ export function petPet(s: PetState, part: 'head' | 'body'): { state: PetState; g
 
   if (s.sick) return { state: s, gained: 0 };
 
-  const next = startActivity(s, part === 'head' ? 'petHead' : 'petBody', BALANCE.pet.duration);
+  const { move, activity } = pickPetMove(part, s.lastPetMove, rand);
+  const next = startActivity(s, activity, BALANCE.pet.durations[activity as keyof typeof BALANCE.pet.durations]);
   return {
     state: {
       ...next,
+      lastPetMove: move,
       stats: { ...s.stats, happiness: clamp(s.stats.happiness + BALANCE.pet.happiness) },
       zeroFor: { ...s.zeroFor, happiness: 0 },
     },

@@ -23,6 +23,10 @@ export const ACTIVITY_LINES: Partial<Record<string, string>> = {
   eating: '好好吃！嚼嚼嚼～',
   playing: '球球！我去撿！',
   petHead: '好舒服～',
-  petBody: '嘿嘿好癢！',
+  jump: '跳跳！',
+  jumpSpin: '看我轉一圈！',
+  nuzzle: '蹭蹭～',
+  chaseTail: '尾巴別跑！',
+  playBow: '來玩嘛來玩嘛！',
   medicine: '苦苦的…但好多了',
 };
