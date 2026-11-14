@@ -224,6 +224,87 @@ button {
   pointer-events: auto;
 }
 
+/* ---------- 寶可夢球浮動按鈕（右側、按鈕列上方） ---------- */
+.capture-btn {
+  position: absolute;
+  right: max(12px, env(safe-area-inset-right, 0px));
+  bottom: calc(var(--safe-bottom) + 98px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  z-index: 6;
+}
+
+.capture-ball {
+  position: relative;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: linear-gradient(to bottom, #e8383d 0 46%, #2b2422 46% 54%, #fbfbf7 54% 100%);
+  box-shadow: var(--shadow), inset 0 -4px 0 rgba(0, 0, 0, 0.08), inset 0 3px 0 rgba(255, 255, 255, 0.35);
+  display: grid;
+  place-items: center;
+  transition: transform 0.12s;
+}
+
+.capture-ball::before {
+  content: '';
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #2b2422;
+}
+
+.capture-paw {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  fill: #fbfbf7;
+}
+
+.capture-x {
+  position: relative;
+  color: #fbfbf7;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.capture-label {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.capture-btn:active .capture-ball {
+  transform: scale(0.92);
+}
+
+.capture-btn.dim {
+  opacity: 0.45;
+}
+
+.capture-btn.aiming .capture-ball {
+  animation: wobble 0.9s ease-in-out infinite;
+}
+
+@keyframes wobble {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  25% {
+    transform: rotate(-14deg);
+  }
+  75% {
+    transform: rotate(14deg);
+  }
+}
+
 .bubble-wrap {
   display: flex;
   flex-direction: column;
@@ -499,7 +580,8 @@ button {
 
 @media (prefers-reduced-motion: reduce) {
   .action.bounce,
-  .action.urgent {
+  .action.urgent,
+  .capture-btn.aiming .capture-ball {
     animation: none;
   }
 }

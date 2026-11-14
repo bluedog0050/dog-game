@@ -9,11 +9,20 @@ import { viewRuntime, wrapAngle } from './viewRuntime';
 import { BALANCE } from '../data/balance';
 import type { Activity } from '../game/types';
 import { FETCH, fetchTimeline, type FetchTimeline } from '../game/fetch';
+import { CAPTURE, captureTimeline, type CaptureTimeline } from '../game/capture';
 
 const { damp } = THREE.MathUtils;
 const TAU = Math.PI * 2;
 const ease = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
 const seg = (p: number, a: number, b: number) => ease((p - a) / (b - a));
+/** 彈出效果：超過一點再回來 */
+const easeOutBack = (x: number) => {
+  const c = 1.9;
+  const q = Math.min(1, Math.max(0, x)) - 1;
+  return 1 + (c + 1) * q * q * q + c * q * q;
+};
+const CAPTURE_RED = new THREE.Color('#ff3b3b');
+const FUR_EMISSIVE = new THREE.Color('#fff4e0');
 
 /** 一團毛（低多邊形二十面體） */
 function Fluff({ p, s, m = M.fur, low = false }: { p: [number, number, number]; s: number | [number, number, number]; m?: THREE.Material; low?: boolean }) {
@@ -48,6 +57,8 @@ export function Pet() {
     actKey: '',
     actStart: 0,
     tl: null as FetchTimeline | null,
+    capTl: null as CaptureTimeline | null,
+    emissive: new THREE.Color(),
     nextBlink: 1,
     blinkUntil: 0,
     tiltTarget: 0,
@@ -98,6 +109,7 @@ export function Pet() {
       a.actKey = key;
       a.actStart = t;
       a.tl = s.activity === 'playing' && s.ballTarget ? fetchTimeline(s.ballTarget) : null;
+      a.capTl = s.activity === 'captured' && s.capture ? captureTimeline(s.capture.escapeAfter) : null;
     }
     const act: Activity = s.activityLeft > 0 ? s.activity : 'idle';
     const at = t - a.actStart; // 動作已進行秒數
@@ -130,6 +142,9 @@ export function Pet() {
     let legTuck = 0; // 空中縮腳 0~1
     let bow = 0; // 伸懶腰姿勢 0~1
     let fast = false; // 身體高度要快速跟上（跳躍用）
+    let petScale = 1; // 被吸進寶可夢球時縮小
+    let capLift = 0; // 被吸進球時往上飄
+    let capTint = 0; // 紅光 0~1
 
     // --- 眨眼 ---
     if (t > a.nextBlink) {
@@ -353,6 +368,51 @@ export function Pet() {
         wagAmp = 0.75;
         break;
       }
+      case 'captureMiss': {
+        // 球丟偏了：轉頭看球
+        headX = -0.1;
+        headY = 0.4;
+        break;
+      }
+      case 'captured': {
+        const tl = a.capTl;
+        if (!tl) break;
+        faceY = 0;
+        lie = 0;
+        wagSpeed = 0;
+        tongueOut = 0;
+        if (at < tl.hitAt) {
+          headX = -0.35; // 看著飛過來的球
+          eyeOpen = 1;
+        } else if (tl.breakAt === null ? at < tl.releaseAt! : at < tl.breakAt) {
+          // 被紅光吸進球裡
+          const k = seg(at, tl.hitAt + 0.12, tl.inBallAt - 0.15);
+          petScale = 1 - k;
+          capLift = k * 0.9;
+          capTint = Math.min(1, (at - tl.hitAt) / 0.15);
+          eyeOpen = 0.2;
+        } else if (tl.releaseAt !== null) {
+          // 收服成功 3 秒後：在煙霧中出現，開心跳一下
+          const q = (at - tl.releaseAt) / CAPTURE.release;
+          petScale = q < 0.1 ? 0 : easeOutBack((q - 0.1) / 0.45);
+          capTint = 1 - seg(q, 0.1, 0.6);
+          if (q > 0.55) bodyY = Math.sin(((q - 0.55) / 0.45) * Math.PI) * 0.3;
+          fast = true;
+          tongueOut = 1;
+          eyeOpen = q > 0.55 ? 0.25 : 1;
+          wagSpeed = 22;
+          wagAmp = 0.6;
+        } else {
+          // 掙脫：跳出來，甩甩頭
+          const q = (at - tl.breakAt!) / CAPTURE.escape;
+          petScale = easeOutBack(q / 0.3);
+          capTint = 1 - seg(q, 0, 0.4);
+          if (q > 0.35 && q < 0.8) headY = Math.sin(at * 28) * 0.4;
+          earX = 0.2;
+          eyeOpen = 0.6;
+        }
+        break;
+      }
       case 'shake': {
         // 洗完甩一甩，毛變蓬鬆
         shake = 1 - at / BALANCE.bath.shakeDuration;
@@ -465,6 +525,10 @@ export function Pet() {
     a.yawWeight = damp(a.yawWeight, act === 'playing' ? 0 : 1, 5, dt);
     const yawEff = wrapAngle(viewRuntime.yaw) * a.yawWeight;
     r.rotation.y = a.faceY + yawEff;
+    // 寶可夢球：縮小、往上飄、整隻消失
+    r.scale.setScalar(Math.max(0.0001, petScale));
+    r.position.y = capLift;
+    r.visible = petScale > 0.01;
     bowlPivot.current.rotation.y = yawEff;
     petRuntime.rootYaw = r.rotation.y;
     petRuntime.position.copy(r.position);
@@ -553,6 +617,13 @@ export function Pet() {
     // 濕的毛有光澤
     (M.fur as THREE.MeshStandardMaterial).roughness = 0.85 - 0.5 * W;
     (M.furShade as THREE.MeshStandardMaterial).roughness = 0.85 - 0.5 * W;
+    // 被收服時的紅光
+    a.emissive.copy(FUR_EMISSIVE).lerp(CAPTURE_RED, capTint);
+    for (const m of [M.fur, M.furShade] as THREE.MeshStandardMaterial[]) {
+      m.emissive.copy(a.emissive);
+    }
+    (M.fur as THREE.MeshStandardMaterial).emissiveIntensity = 0.18 + capTint * 0.9;
+    (M.furShade as THREE.MeshStandardMaterial).emissiveIntensity = 0.12 + capTint * 0.9;
 
     // 共享座標給特效
     h.updateWorldMatrix(true, false);

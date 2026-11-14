@@ -15,9 +15,19 @@ export type Activity =
   | 'playBow' // 伸懶腰
   | 'medicine'
   | 'refuse'
-  | 'shake';
+  | 'shake'
+  | 'captured' // 被寶可夢球收服（含搖晃、成功釋放或掙脫）
+  | 'captureMiss'; // 寶可夢球沒丟中
 
 export type BathStage = 'wash' | 'dry';
+
+export interface CaptureThrow {
+  hit: boolean;
+  /** 落點（沒丟中時用） */
+  target: { x: number; z: number };
+  /** 第幾次搖晃後掙脫；null = 收服成功 */
+  escapeAfter: 2 | 3 | null;
+}
 
 /** 被摸時的隨機動作 */
 export type PetMove = 'petHead' | 'jump' | 'nuzzle' | 'chaseTail' | 'playBow';
@@ -45,6 +55,10 @@ export interface PetState {
   dryTime: number;
   /** 瞄準模式：等玩家點畫面丟球 */
   aiming: boolean;
+  /** 瞄準要丟的是哪一種球 */
+  aimKind: 'ball' | 'capture';
+  /** 寶可夢球這一次的結果（動作進行中才有） */
+  capture: CaptureThrow | null;
   /** 球的落點（丟球動作進行中才有） */
   ballTarget: { x: number; z: number } | null;
   /** 上一次被摸時做的動作（避免連續重複） */

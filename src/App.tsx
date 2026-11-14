@@ -3,6 +3,7 @@ import { PetScene } from './scene/PetScene';
 import { TopBar } from './ui/TopBar';
 import { SpeechBubble } from './ui/SpeechBubble';
 import { ActionBar } from './ui/ActionBar';
+import { CaptureButton } from './ui/CaptureButton';
 import { Floaters, NightShade, Toast, Welcome } from './ui/Overlays';
 import { useGameLoop } from './hooks/useGameLoop';
 import { unlockAudio } from './audio/sfx';
@@ -31,6 +32,7 @@ export default function App() {
       <Floaters />
       <Toast />
       <div className="bottom">
+        <CaptureButton />
         <SpeechBubble />
         <ActionBar />
       </div>

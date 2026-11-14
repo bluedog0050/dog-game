@@ -4,10 +4,11 @@ import { canDo, type ActionKey } from '../game/pet';
 export function ActionBar() {
   const pet = useGameStore((s) => s.pet);
   const doAction = useGameStore((s) => s.doAction);
+  const ballAim = pet.aiming && pet.aimKind === 'ball';
 
   const buttons: { key: ActionKey; icon: string; label: string }[] = [
     { key: 'feed', icon: '🍖', label: '餵食' },
-    { key: 'play', icon: pet.aiming ? '✖️' : '🎾', label: pet.aiming ? '取消' : '玩球' },
+    { key: 'play', icon: ballAim ? '✖️' : '🎾', label: ballAim ? '取消' : '玩球' },
     {
       key: 'bath',
       icon: !pet.bathing ? '🛁' : pet.bathStage === 'wash' ? '🫧' : '💨',
@@ -21,7 +22,7 @@ export function ActionBar() {
     <nav className="actionbar">
       {buttons.map((b) => {
         const special =
-          (b.key === 'sleep' && pet.sleeping) || (b.key === 'bath' && pet.bathing) || (b.key === 'play' && pet.aiming);
+          (b.key === 'sleep' && pet.sleeping) || (b.key === 'bath' && pet.bathing) || (b.key === 'play' && ballAim);
         const disabled = !special && canDo(pet, b.key) !== null;
         const urgent = b.key === 'medicine' && pet.sick;
         // 換到吹乾階段、還沒開始吹之前，按鈕輕輕彈跳提示

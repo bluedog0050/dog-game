@@ -2,6 +2,7 @@
 import { BALANCE, DECAY_PER_SEC, type StatKey } from '../data/balance';
 import type { Activity, IssueKey, PetMove, PetState } from './types';
 import { fetchTimeline, type Point } from './fetch';
+import { CAPTURE, captureTimeline, missDuration } from './capture';
 
 const clamp = (v: number) => Math.max(0, Math.min(100, v));
 const KEYS: StatKey[] = ['hunger', 'happiness', 'energy', 'cleanliness'];
@@ -23,6 +24,8 @@ export function createPet(): PetState {
     washTime: 0,
     dryTime: 0,
     aiming: false,
+    aimKind: 'ball',
+    capture: null,
     ballTarget: null,
     lastPetMove: null,
     time: 0,
@@ -39,17 +42,30 @@ export function tick(s: PetState, dt: number): PetState {
   if (dt <= 0) return s;
   const stats = { ...s.stats };
   const zeroFor = { ...s.zeroFor };
-  let { sleeping, sick, sulking, activity, activityLeft } = s;
+  let { sleeping, sick, sulking, activity, activityLeft, aiming, aimKind } = s;
+  let happinessFloor = 0;
 
   // 動作計時
   if (activityLeft > 0) {
     activityLeft = Math.max(0, activityLeft - dt);
-    if (activityLeft === 0) activity = 'idle';
+    if (activityLeft === 0) {
+      // 寶可夢球結束：沒丟中就回到瞄準；收服成功放出來後就不生氣了
+      if (activity === 'captureMiss') {
+        aiming = true;
+        aimKind = 'capture';
+      } else if (activity === 'captured' && s.capture && !s.capture.escapeAfter && sulking) {
+        sulking = false;
+        happinessFloor = BALANCE.sulk.forgiveHappiness;
+      }
+      activity = 'idle';
+    }
   }
   const ballTarget = activity === 'playing' ? s.ballTarget : null;
+  const capture = activity === 'captured' || activity === 'captureMiss' ? s.capture : null;
+  if (happinessFloor) stats.happiness = Math.max(stats.happiness, happinessFloor);
 
-  // 生病時所有數值暫停下降，給玩家時間餵藥
-  if (!sick) {
+  // 生病時所有數值暫停下降，給玩家時間餵藥；在寶可夢球裡也暫停
+  if (!sick && activity !== 'captured') {
     for (const k of KEYS) {
       let rate = DECAY_PER_SEC[k];
       if (sleeping && k !== 'energy') rate *= BALANCE.sleep.otherDecayMultiplier;
@@ -81,21 +97,23 @@ export function tick(s: PetState, dt: number): PetState {
     sick = true;
     sleeping = false;
   }
-  if (!sulking && !sick && !sleeping && zeroFor.happiness >= BALANCE.sulk.triggerAfter) {
+  if (!sulking && !sick && !sleeping && activity !== 'captured' && zeroFor.happiness >= BALANCE.sulk.triggerAfter) {
     sulking = true;
   }
 
   return {
     ...s,
     stats,
-    zeroFor,
     sleeping,
     sick,
     sulking,
     sulkPets: sulking ? s.sulkPets : 0,
-    // 生病、鬧脾氣、睡著時取消瞄準
-    aiming: s.aiming && !sick && !sulking && !sleeping,
+    // 生病、睡著時取消瞄準；鬧脾氣不能玩球，但可以丟寶可夢球
+    aiming: aiming && !sick && !sleeping && !(sulking && aimKind === 'ball'),
+    aimKind,
+    capture,
     ballTarget,
+    zeroFor: happinessFloor ? { ...zeroFor, happiness: 0 } : zeroFor,
     activity,
     activityLeft,
     time: s.time + dt,
@@ -127,7 +145,7 @@ export function pickPetMove(
 
 // ---------- 可執行動作 ----------
 
-export type ActionKey = 'feed' | 'play' | 'bath' | 'sleep' | 'medicine';
+export type ActionKey = 'feed' | 'play' | 'bath' | 'sleep' | 'medicine' | 'capture';
 
 /** 回傳 null 代表可以做；回傳字串代表不能做的原因 */
 export function canDo(s: PetState, a: ActionKey): string | null {
@@ -155,6 +173,9 @@ export function canDo(s: PetState, a: ActionKey): string | null {
     case 'medicine':
       if (!s.sick) return '牠沒有生病';
       return null;
+    case 'capture':
+      if (s.sick) return '生病了，先餵藥吧';
+      return null;
   }
 }
 
@@ -171,7 +192,35 @@ export function feed(s: PetState): PetState {
 /** 進入瞄準模式，等玩家點畫面決定丟球方向 */
 export function startAiming(s: PetState): PetState {
   if (canDo(s, 'play')) return s;
-  return { ...s, aiming: true, bathing: false };
+  return { ...s, aiming: true, aimKind: 'ball', bathing: false };
+}
+
+/** 進入寶可夢球的瞄準模式 */
+export function startCaptureAim(s: PetState): PetState {
+  if (canDo(s, 'capture')) return s;
+  return { ...s, aiming: true, aimKind: 'capture' };
+}
+
+/**
+ * 丟出寶可夢球。
+ * hit：有沒有丟中寵物；丟中後有 30% 機率在第 2 或第 3 次搖晃後掙脫。
+ */
+export function throwCapture(s: PetState, hit: boolean, target: Point, rand: () => number = Math.random): PetState {
+  if (!s.aiming || s.aimKind !== 'capture' || canDo(s, 'capture')) return s;
+  const t = clampBallTarget(target);
+  if (!hit) {
+    return {
+      ...startActivity(s, 'captureMiss', missDuration()),
+      aiming: false,
+      capture: { hit: false, target: t, escapeAfter: null },
+    };
+  }
+  const escapeAfter = rand() < CAPTURE.escapeChance ? (rand() < 0.5 ? 2 : 3) : null;
+  return {
+    ...startActivity(s, 'captured', captureTimeline(escapeAfter).total),
+    aiming: false,
+    capture: { hit: true, target: t, escapeAfter },
+  };
 }
 
 export function cancelAiming(s: PetState): PetState {
@@ -199,7 +248,7 @@ export function clampBallTarget(p: Point): Point {
 
 /** 丟球：寵物會跑去撿回來 */
 export function throwBall(s: PetState, target: Point): PetState {
-  if (!s.aiming || canDo(s, 'play')) return s;
+  if (!s.aiming || s.aimKind !== 'ball' || canDo(s, 'play')) return s;
   const t = clampBallTarget(target);
   const tl = fetchTimeline(t);
   const next = startActivity(s, 'playing', tl.total);

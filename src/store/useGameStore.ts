@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import * as G from '../game/pet';
 import { fetchTimeline } from '../game/fetch';
+import { CAPTURE, captureTimeline } from '../game/capture';
 import { BALANCE } from '../data/balance';
 import type { PetState } from '../game/types';
 import { DEFAULT_NAME, loadSave, writeSave } from '../persistence/storage';
@@ -29,6 +30,8 @@ interface GameStore {
   bathTouch: (dt: number) => void;
   /** 瞄準模式下點畫面：把球丟到地板上的 (x, z) */
   throwBall: (x: number, z: number) => void;
+  /** 寶可夢球瞄準模式下點畫面：hit = 有沒有點在寵物身上 */
+  throwCapture: (hit: boolean, x: number, z: number) => void;
   returnAfterAway: (seconds: number) => void;
   setName: (n: string) => void;
   toggleSound: () => void;
@@ -83,7 +86,12 @@ export const useGameStore = create<GameStore>((set, get) => {
         toast('被叫醒了…有點不開心');
         return;
       }
-      if (a === 'play' && s.aiming) {
+      // 再按一次同一顆球的按鈕 = 取消瞄準
+      if (a === 'play' && s.aiming && s.aimKind === 'ball') {
+        set({ pet: G.cancelAiming(s) });
+        return;
+      }
+      if (a === 'capture' && s.aiming && s.aimKind === 'capture') {
         set({ pet: G.cancelAiming(s) });
         return;
       }
@@ -114,6 +122,10 @@ export const useGameStore = create<GameStore>((set, get) => {
         case 'sleep':
           set({ pet: G.toggleSleep(s) });
           sfx.sleep();
+          break;
+        case 'capture':
+          set({ pet: G.startCaptureAim(s) });
+          toast('點寵物，丟出寶可夢球！');
           break;
         case 'medicine':
           set({ pet: G.giveMedicine(s) });
@@ -184,6 +196,40 @@ export const useGameStore = create<GameStore>((set, get) => {
         float('🎾 +40');
         set((x) => ({ heartBurst: x.heartBurst + 1 }));
       }, tl.home * 1000);
+    },
+
+    throwCapture: (hit, x, z) => {
+      const s = get().pet;
+      const next = G.throwCapture(s, hit, { x, z });
+      if (next === s) return;
+      set({ pet: next });
+      sfx.throwBall();
+      const at = (sec: number, fn: () => void) => setTimeout(fn, sec * 1000);
+      if (!hit) {
+        at(CAPTURE.fly, () => sfx.nope());
+        return;
+      }
+      const tl = captureTimeline(next.capture!.escapeAfter);
+      const name = get().name;
+      at(tl.hitAt, () => sfx.zap());
+      tl.shakes.forEach((t0) => at(t0 + CAPTURE.shake * 0.5, () => sfx.click()));
+      if (tl.successAt !== null) {
+        at(tl.successAt, () => {
+          sfx.success();
+          float(`✨ 收服成功！`);
+        });
+        at(tl.releaseAt!, () => {
+          sfx.poof();
+          setTimeout(() => sfx.bark(), 350);
+          set((x) => ({ heartBurst: x.heartBurst + 1 }));
+        });
+      } else {
+        at(tl.breakAt!, () => {
+          sfx.poof();
+          sfx.huff();
+          float(`${name}掙脫了！`);
+        });
+      }
     },
 
     returnAfterAway: (seconds) => {

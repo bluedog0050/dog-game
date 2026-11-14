@@ -95,7 +95,46 @@ export const loops = {
   },
 };
 
+/** 短促的噪音（噗、煙霧） */
+function noiseBurst(dur: number, freq: number, vol: number) {
+  if (!enabled || !ctx) return;
+  const buf = noise();
+  if (!buf) return;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const f = ctx.createBiquadFilter();
+  f.type = 'lowpass';
+  f.frequency.setValueAtTime(freq, ctx.currentTime);
+  f.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + dur);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(vol, ctx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+  src.connect(f).connect(g).connect(ctx.destination);
+  src.start();
+  src.stop(ctx.currentTime + dur + 0.05);
+}
+
 export const sfx = {
+  /** 寶可夢球：吸進去的電子音 */
+  zap() {
+    tone(900, 0.5, { type: 'square', slideTo: 150, vol: 0.06 });
+    tone(1200, 0.4, { type: 'sawtooth', slideTo: 300, vol: 0.03, delay: 0.05 });
+  },
+  /** 寶可夢球搖晃：喀 */
+  click() {
+    tone(1800, 0.04, { type: 'square', vol: 0.05 });
+    tone(900, 0.05, { type: 'square', vol: 0.04, delay: 0.05 });
+  },
+  /** 收服成功：叮叮叮 */
+  success() {
+    tone(784, 0.15, { type: 'triangle', vol: 0.14 });
+    tone(988, 0.15, { type: 'triangle', vol: 0.14, delay: 0.13 });
+    tone(1319, 0.35, { type: 'triangle', vol: 0.14, delay: 0.26 });
+  },
+  /** 釋放／掙脫：噗 */
+  poof() {
+    noiseBurst(0.45, 2500, 0.18);
+  },
   bark() {
     tone(620, 0.12, { type: 'triangle', slideTo: 380, vol: 0.22 });
     tone(680, 0.12, { type: 'triangle', slideTo: 400, vol: 0.2, delay: 0.16 });

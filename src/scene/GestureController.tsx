@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { useGameStore } from '../store/useGameStore';
 import { petRuntime } from './petRuntime';
 import { VIEW, syncOffFront, viewRuntime, wrapAngle } from './viewRuntime';
+import { CAPTURE } from '../game/capture';
 
 /**
  * 所有畫面觸控都在這裡分辨：
@@ -61,8 +62,8 @@ export function GestureController() {
       return 'body';
     };
 
-    /** 瞄準模式：依點擊方向把球丟到地板上 */
-    const throwAt = (x: number, y: number) => {
+    /** 點擊位置對應到地板上的點 */
+    const floorPoint = (x: number, y: number) => {
       const { origin, direction } = castFrom(x, y).ray;
       let tx: number;
       let tz: number;
@@ -74,7 +75,17 @@ export function GestureController() {
         tx = origin.x + (direction.x / len) * 10;
         tz = origin.z + (direction.z / len) * 10;
       }
-      useGameStore.getState().throwBall(tx, tz);
+      return { x: tx, z: tz };
+    };
+
+    /** 寶可夢球：點在寵物身上，或離寵物中心夠近，都算丟中 */
+    const isCaptureHit = (x: number, y: number) => {
+      if (hitPet(x, y)) return true;
+      const rect = el.getBoundingClientRect();
+      const c = tools.hit.copy(petRuntime.position).setY(0.6).project(camera);
+      const sx = rect.left + ((c.x + 1) / 2) * rect.width;
+      const sy = rect.top + ((1 - c.y) / 2) * rect.height;
+      return Math.hypot(sx - x, sy - y) < CAPTURE.hitRadiusPx;
     };
 
     const pinchDist = () => {
@@ -155,8 +166,13 @@ export function GestureController() {
       if (gesture.mode === 'pending' && e.type === 'pointerup') {
         // 點一下
         const st = useGameStore.getState();
-        if (st.pet.aiming) {
-          throwAt(e.clientX, e.clientY);
+        if (st.pet.aiming && st.pet.aimKind === 'capture') {
+          const hit = isCaptureHit(e.clientX, e.clientY);
+          const f = floorPoint(e.clientX, e.clientY);
+          st.throwCapture(hit, f.x, f.z);
+        } else if (st.pet.aiming) {
+          const f = floorPoint(e.clientX, e.clientY);
+          st.throwBall(f.x, f.z);
         } else if (!st.pet.bathing) {
           const hit = hitPet(e.clientX, e.clientY);
           if (hit) st.touchPet(partOf(hit.object));

@@ -9,6 +9,7 @@ import { VIEW, viewRuntime } from './viewRuntime';
 import { petRuntime } from './petRuntime';
 import { BathController } from './BathController';
 import { BathEffects } from './BathEffects';
+import { CaptureEffects } from './CaptureEffects';
 import { useGameStore } from '../store/useGameStore';
 
 const FACE_OFFSET = new THREE.Vector3(0, -0.4, 0);
@@ -102,6 +103,7 @@ export function PetScene() {
       <Pet />
       <Effects />
       <BathEffects />
+      <CaptureEffects />
     </Canvas>
   );
 }
