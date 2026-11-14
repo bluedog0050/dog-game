@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { useGameStore } from '../store/useGameStore';
 import { petRuntime } from './petRuntime';
 import { loops, sfx } from '../audio/sfx';
+import { gesture } from './GestureController';
 
 /**
  * 洗澡的觸控：每一幀檢查手指是否「按在寵物身上」。
@@ -11,40 +12,12 @@ import { loops, sfx } from '../audio/sfx';
  */
 export function BathController() {
   const { camera, gl } = useThree();
-  // mustRelease：搓完泡泡時手指還按著，要先放開再按才開始吹乾
-  const pointer = useRef({ down: false, x: 0, y: 0, mustRelease: false });
+  // 搓完泡泡時手指還按著，要先放開再按才開始吹乾
+  const mustRelease = useRef(false);
   const prevStage = useRef<string>('');
   const acc = useRef(0);
   const nextPop = useRef(0);
   const tools = useMemo(() => ({ ray: new THREE.Raycaster(), ndc: new THREE.Vector2() }), []);
-
-  useEffect(() => {
-    const el = gl.domElement;
-    const p = pointer.current;
-    const down = (e: PointerEvent) => {
-      p.down = true;
-      p.x = e.clientX;
-      p.y = e.clientY;
-    };
-    const move = (e: PointerEvent) => {
-      p.x = e.clientX;
-      p.y = e.clientY;
-    };
-    const up = () => {
-      p.down = false;
-      p.mustRelease = false;
-    };
-    el.addEventListener('pointerdown', down);
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-    window.addEventListener('pointercancel', up);
-    return () => {
-      el.removeEventListener('pointerdown', down);
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      window.removeEventListener('pointercancel', up);
-    };
-  }, [gl]);
 
   useFrame((state, rawDt) => {
     const dt = Math.min(rawDt, 0.05);
@@ -52,14 +25,16 @@ export function BathController() {
     const store = useGameStore.getState();
     const pet = store.pet;
     const bath = petRuntime.bath;
-    const p = pointer.current;
+    const p = gesture;
+    if (!p.down) mustRelease.current = false;
 
     const stageKey = pet.bathing ? pet.bathStage : '';
-    if (prevStage.current === 'wash' && stageKey === 'dry' && p.down) p.mustRelease = true;
+    if (prevStage.current === 'wash' && stageKey === 'dry' && p.down) mustRelease.current = true;
     prevStage.current = stageKey;
 
+    // 只有「從寵物身上開始」的觸控才算洗澡（從空白處開始滑是旋轉視角）
     let touching = false;
-    if (pet.bathing && p.down && !p.mustRelease && petRuntime.hitTargets.length) {
+    if (pet.bathing && p.down && p.mode === 'bath' && !mustRelease.current && petRuntime.hitTargets.length) {
       const rect = gl.domElement.getBoundingClientRect();
       tools.ndc.set(((p.x - rect.left) / rect.width) * 2 - 1, -((p.y - rect.top) / rect.height) * 2 + 1);
       tools.ray.setFromCamera(tools.ndc, camera);

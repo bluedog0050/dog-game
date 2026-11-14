@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { useFrame, type ThreeEvent } from '@react-three/fiber';
+import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { FUR_CLEAN, FUR_DIRTY, FUR_SICK, FUR_WET, GEO, M, mat } from './materials';
 import { petRuntime } from './petRuntime';
 import { useGameStore } from '../store/useGameStore';
 import { wetness } from '../game/pet';
+import { viewRuntime, wrapAngle } from './viewRuntime';
 import { BALANCE } from '../data/balance';
 import type { Activity } from '../game/types';
 import { FETCH, fetchTimeline, type FetchTimeline } from '../game/fetch';
@@ -40,6 +41,7 @@ export function Pet() {
   const bowl = useRef<THREE.Group>(null!);
   const pill = useRef<THREE.Group>(null!);
   const marker = useRef<THREE.Mesh>(null!);
+  const bowlPivot = useRef<THREE.Group>(null!);
 
   // 動畫狀態（平滑插值用）
   const anim = useRef({
@@ -57,6 +59,8 @@ export function Pet() {
     nextYawn: 3,
     yawnStart: -10,
     lieAmt: 0,
+    /** 玩家旋轉視角的套用比例：丟球跑來跑去時暫時為 0 */
+    yawWeight: 1,
     nextWetShake: 0,
     wetShakeStart: -10,
     faceY: 0,
@@ -75,23 +79,7 @@ export function Pet() {
   const pillB = useMemo(() => mat('#ffffff'), []);
 
 
-  // ---------- 觸控 ----------
-  const partOf = (o: THREE.Object3D | null): 'head' | 'body' => {
-    while (o) {
-      if (o.userData.part) return o.userData.part;
-      o = o.parent;
-    }
-    return 'body';
-  };
-
-  const onDown = (e: ThreeEvent<PointerEvent>) => {
-    const st = useGameStore.getState();
-    if (st.pet.aiming) return; // 瞄準時點到狗也算丟球，交給 AimHandler
-    e.stopPropagation();
-    if (st.pet.bathing) return; // 洗澡的觸控交給 BathController
-    st.touchPet(partOf(e.object));
-  };
-
+  // 觸控判定由 GestureController 統一處理，這裡只登記可被點到的部位
   useEffect(() => {
     petRuntime.hitTargets = [torso.current, head.current];
   }, []);
@@ -402,7 +390,12 @@ export function Pet() {
     let df = faceY - a.faceY;
     df = (((df + Math.PI) % TAU) + TAU) % TAU - Math.PI;
     a.faceY += df * Math.min(1, dt * (act === 'playing' ? 10 : 6));
-    r.rotation.y = a.faceY;
+    // 玩家滑動螢幕：寵物原地旋轉（追球時暫停套用，回來後再轉回玩家設定的角度）
+    a.yawWeight = damp(a.yawWeight, act === 'playing' ? 0 : 1, 5, dt);
+    const yawEff = wrapAngle(viewRuntime.yaw) * a.yawWeight;
+    r.rotation.y = a.faceY + yawEff;
+    bowlPivot.current.rotation.y = yawEff;
+    petRuntime.rootYaw = r.rotation.y;
     petRuntime.position.copy(r.position);
 
     a.lieAmt = damp(a.lieAmt, lie, 5, dt);
@@ -501,7 +494,7 @@ export function Pet() {
       <group ref={root}>
         <group ref={body}>
           {/* 身體：一大團蓬鬆的毛 */}
-          <group ref={torso} position={[0, 0.5, 0]} userData={{ part: 'body' }} onPointerDown={onDown}>
+          <group ref={torso} position={[0, 0.5, 0]} userData={{ part: 'body' }}>
             <Fluff p={[0, 0, 0]} s={[0.5, 0.42, 0.58]} />
             <Fluff p={[0, 0.08, 0.28]} s={[0.42, 0.42, 0.36]} />
             {/* 胸前鬃毛 */}
@@ -536,7 +529,7 @@ export function Pet() {
           </group>
 
           {/* 頭 */}
-          <group ref={head} position={[0, 0.98, 0.32]} userData={{ part: 'head' }} onPointerDown={onDown}>
+          <group ref={head} position={[0, 0.98, 0.32]} userData={{ part: 'head' }}>
             <Fluff p={[0, 0, 0]} s={[0.4, 0.37, 0.36]} />
             {/* 臉頰的毛 */}
             <Fluff p={[0.27, -0.12, 0.04]} s={0.21} />
@@ -587,7 +580,8 @@ export function Pet() {
         <ringGeometry args={[0.7, 1, 20]} />
       </mesh>
 
-      {/* 飯碗 */}
+      {/* 飯碗：跟著寵物的旋轉一起轉，永遠在嘴巴前面 */}
+      <group ref={bowlPivot}>
       <group ref={bowl} position={[0, 0, 0.92]} visible={false}>
         <mesh material={bowlMat} position={[0, 0.07, 0]} castShadow>
           <cylinderGeometry args={[0.22, 0.16, 0.14, 10]} />
@@ -595,6 +589,8 @@ export function Pet() {
         {[[0, 0.15, 0], [0.07, 0.15, 0.04], [-0.06, 0.15, -0.03], [0.02, 0.17, -0.06], [-0.05, 0.16, 0.06]].map((p, i) => (
           <mesh key={i} geometry={GEO.fluffLow} material={foodMat} position={p as [number, number, number]} scale={0.05} />
         ))}
+      </group>
+
       </group>
 
       {/* 藥丸 */}

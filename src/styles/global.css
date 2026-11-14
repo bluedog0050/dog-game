@@ -503,3 +503,22 @@ button {
     animation: none;
   }
 }
+
+.reset-view {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  animation: pop 0.25s ease-out;
+}
+
+.reset-view span {
+  font-size: 17px;
+}

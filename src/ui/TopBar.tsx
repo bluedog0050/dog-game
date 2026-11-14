@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../store/useGameStore';
 import { BALANCE, type StatKey } from '../data/balance';
+import { useViewStore } from '../scene/viewRuntime';
 
 const STATS: { key: StatKey; icon: string; label: string; color: string }[] = [
   { key: 'hunger', icon: '🍖', label: '飽食', color: 'var(--c-hunger)' },
@@ -66,12 +67,19 @@ export function TopBar() {
   const stats = useGameStore((s) => s.pet.stats);
   const sound = useGameStore((s) => s.sound);
   const toggleSound = useGameStore((s) => s.toggleSound);
+  const offFront = useViewStore((s) => s.offFront);
+  const requestReset = useViewStore((s) => s.requestReset);
 
   return (
     <header className="topbar">
       <div className="topbar-row">
         <span className="paw">🐾</span>
         <NameEditor />
+        {offFront && (
+          <button className="reset-view" onClick={requestReset}>
+            <span aria-hidden>⟲</span> 切回視角
+          </button>
+        )}
         <button className="icon-btn" onClick={toggleSound} aria-label={sound ? '關閉音效' : '開啟音效'}>
           {sound ? '🔊' : '🔇'}
         </button>

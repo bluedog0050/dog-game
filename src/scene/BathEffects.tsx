@@ -20,6 +20,8 @@ interface Drop {
 /** 洗澡特效：身上的泡沫、水滴、吹風機與暖風 */
 export function BathEffects() {
   const group = useRef<THREE.Group>(null!);
+  /** 泡沫黏在寵物身上：這個群組跟著寵物的位置與朝向 */
+  const foamGroup = useRef<THREE.Group>(null!);
   const dryer = useRef<THREE.Group>(null!);
 
   const foamMat = useMemo(
@@ -64,7 +66,7 @@ export function BathEffects() {
 
   useEffect(() => {
     const g = group.current;
-    foam.forEach((f) => g.add(f.mesh));
+    foam.forEach((f) => foamGroup.current.add(f.mesh));
     drops.forEach((d) => g.add(d.mesh));
     air.forEach((a) => g.add(a.mesh));
   }, [foam, drops, air]);
@@ -92,6 +94,10 @@ export function BathEffects() {
     const tm = timers.current;
 
     // ---- 泡沫：搓的地方越來越多，吹乾時慢慢消失 ----
+    const fg = foamGroup.current;
+    fg.position.copy(petRuntime.position);
+    fg.rotation.y = petRuntime.rootYaw;
+    fg.updateMatrixWorld();
     if (washing && bath.touching && t > tm.foam) {
       tm.foam = t + 0.06;
       const f = foam.find((x) => !x.active);
@@ -100,7 +106,8 @@ export function BathEffects() {
         f.size = 0;
         // 稍微往外推，貼在毛的表面
         v.a.copy(bath.point).sub(petRuntime.position).setY(0).normalize().multiplyScalar(0.04);
-        f.mesh.position.copy(bath.point).add(v.a).add(v.b.set((Math.random() - 0.5) * 0.12, (Math.random() - 0.5) * 0.12, (Math.random() - 0.5) * 0.12));
+        v.a.add(bath.point).add(v.b.set((Math.random() - 0.5) * 0.12, (Math.random() - 0.5) * 0.12, (Math.random() - 0.5) * 0.12));
+        f.mesh.position.copy(fg.worldToLocal(v.a));
         f.mesh.rotation.set(Math.random() * 3, Math.random() * 3, 0);
         f.mesh.visible = true;
       }
@@ -175,6 +182,7 @@ export function BathEffects() {
   return (
     <>
       <group ref={group} />
+      <group ref={foamGroup} />
       {/* 低多邊形吹風機：lookAt 會讓 +Z 朝向寵物，所以噴嘴放在 +Z */}
       <group ref={dryer} visible={false}>
         <mesh material={dryerMat} rotation={[Math.PI / 2, 0, 0]} castShadow>

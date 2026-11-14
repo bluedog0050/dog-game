@@ -8,6 +8,8 @@ export const petRuntime = {
   mouth: new THREE.Vector3(0, 0.7, 0.6),
   /** 頭頂的世界座標（愛心、Zzz 用） */
   headTop: new THREE.Vector3(0, 1.4, 0.3),
+  /** 寵物目前的朝向（含玩家旋轉），泡沫要黏在身上一起轉 */
+  rootYaw: 0,
   /** 可被觸控判定的寵物部位（身體、頭） */
   hitTargets: [] as THREE.Object3D[],
   /** 洗澡時手指的狀態 */
