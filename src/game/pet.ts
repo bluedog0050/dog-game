@@ -235,7 +235,7 @@ export type BathEvent = 'none' | 'washDone' | 'finished';
 /**
  * 手指按在寵物身上 dt 秒。
  * 搓泡泡：3 秒內清潔度升到 100，滿 3 秒換吹乾。
- * 吹乾：滿 10 秒完成，快樂 +10，然後甩一甩身體。
+ * 吹乾：滿 5 秒完成，快樂 +10，然後甩一甩身體。
  */
 export function bathTouch(s: PetState, dt: number): { state: PetState; event: BathEvent } {
   if (!s.bathing || dt <= 0) return { state: s, event: 'none' };

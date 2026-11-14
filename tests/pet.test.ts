@@ -74,7 +74,7 @@ describe('pet logic', () => {
     expect(p.stats.energy).toBeGreaterThan(95);
   });
 
-  it('bath: 3s of washing fills cleanliness, then 10s of drying finishes', () => {
+  it('bath: 3s of washing fills cleanliness, then 5s of drying finishes', () => {
     let p = startBath(createPet());
     expect(p.bathing).toBe(true);
     expect(p.bathStage).toBe('wash');
@@ -96,7 +96,7 @@ describe('pet logic', () => {
     expect(p.bathing).toBe(true);
     expect(p.dryTime).toBe(0);
 
-    for (let i = 0; i < 99; i++) ({ state: p } = bathTouch(p, 0.1));
+    for (let i = 0; i < 49; i++) ({ state: p } = bathTouch(p, 0.1));
     expect(p.bathing).toBe(true);
     const happyBefore = p.stats.happiness;
     ({ state: p, event: ev } = bathTouch(p, 0.2));

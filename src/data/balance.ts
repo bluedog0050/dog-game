@@ -32,7 +32,7 @@ export const BALANCE = {
     /** 手指在寵物身上搓泡泡的累計秒數 */
     washSeconds: 3,
     /** 手指按住寵物吹乾的累計秒數 */
-    drySeconds: 10,
+    drySeconds: 5,
     /** 洗完的快樂獎勵 */
     happinessBonus: 10,
     /** 甩乾身體的動畫秒數 */
