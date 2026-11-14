@@ -1,0 +1,245 @@
+// 純遊戲邏輯：不依賴 React、3D 或瀏覽器，可單獨測試。
+import { BALANCE, DECAY_PER_SEC, type StatKey } from '../data/balance';
+import type { Activity, IssueKey, PetState } from './types';
+
+const clamp = (v: number) => Math.max(0, Math.min(100, v));
+const KEYS: StatKey[] = ['hunger', 'happiness', 'energy', 'cleanliness'];
+
+export function createPet(): PetState {
+  const v = BALANCE.startValue;
+  return {
+    stats: { hunger: v, happiness: v, energy: v, cleanliness: v },
+    sleeping: false,
+    sick: false,
+    sulking: false,
+    sulkPets: 0,
+    zeroFor: { hunger: 0, cleanliness: 0, happiness: 0 },
+    activity: 'idle',
+    activityLeft: 0,
+    activityStartedAt: 0,
+    bathing: false,
+    time: 0,
+  };
+}
+
+/** 離線重開：數值回到 50、清除所有異常狀態 */
+export function resetForReturn(prev: PetState): PetState {
+  return { ...createPet(), time: prev.time };
+}
+
+/** 時間前進 dt 秒 */
+export function tick(s: PetState, dt: number): PetState {
+  if (dt <= 0) return s;
+  const stats = { ...s.stats };
+  const zeroFor = { ...s.zeroFor };
+  let { sleeping, sick, sulking, activity, activityLeft } = s;
+
+  // 動作計時
+  if (activityLeft > 0) {
+    activityLeft = Math.max(0, activityLeft - dt);
+    if (activityLeft === 0) activity = 'idle';
+  }
+
+  // 生病時所有數值暫停下降，給玩家時間餵藥
+  if (!sick) {
+    for (const k of KEYS) {
+      let rate = DECAY_PER_SEC[k];
+      if (sleeping && k !== 'energy') rate *= BALANCE.sleep.otherDecayMultiplier;
+      if (k === 'energy' && sleeping) {
+        stats.energy = clamp(stats.energy + BALANCE.sleep.energyPerSec * dt);
+        continue;
+      }
+      // 洗澡、吃飯中不會掉對應數值
+      if (k === 'cleanliness' && s.bathing) continue;
+      if (k === 'hunger' && activity === 'eating') continue;
+      if (k === 'happiness' && sulking) continue;
+      stats[k] = clamp(stats[k] - rate * dt);
+    }
+  }
+
+  // 睡飽自動醒
+  if (sleeping && stats.energy >= 100) sleeping = false;
+
+  // 歸零計時
+  zeroFor.hunger = stats.hunger <= 0 ? zeroFor.hunger + dt : 0;
+  zeroFor.cleanliness = stats.cleanliness <= 0 ? zeroFor.cleanliness + dt : 0;
+  zeroFor.happiness = stats.happiness <= 0 ? zeroFor.happiness + dt : 0;
+
+  if (
+    !sick &&
+    (zeroFor.hunger >= BALANCE.sick.triggerAfter ||
+      zeroFor.cleanliness >= BALANCE.sick.triggerAfter)
+  ) {
+    sick = true;
+    sleeping = false;
+  }
+  if (!sulking && !sick && !sleeping && zeroFor.happiness >= BALANCE.sulk.triggerAfter) {
+    sulking = true;
+  }
+
+  return {
+    ...s,
+    stats,
+    zeroFor,
+    sleeping,
+    sick,
+    sulking,
+    sulkPets: sulking ? s.sulkPets : 0,
+    activity,
+    activityLeft,
+    time: s.time + dt,
+  };
+}
+
+function startActivity(s: PetState, activity: Activity, duration: number): PetState {
+  return { ...s, activity, activityLeft: duration, activityStartedAt: s.time };
+}
+
+export const isBusy = (s: PetState) =>
+  s.activityLeft > 0 && s.activity !== 'petHead' && s.activity !== 'petBody';
+
+// ---------- 可執行動作 ----------
+
+export type ActionKey = 'feed' | 'play' | 'bath' | 'sleep' | 'medicine';
+
+/** 回傳 null 代表可以做；回傳字串代表不能做的原因 */
+export function canDo(s: PetState, a: ActionKey): string | null {
+  if (isBusy(s)) return '牠正在忙喔';
+  if (s.sleeping && a !== 'sleep') return '牠在睡覺，先叫醒牠吧';
+  switch (a) {
+    case 'feed':
+      if (s.stats.hunger >= 100) return '牠吃不下了';
+      return null;
+    case 'play':
+      if (s.sick) return '生病了，不能玩';
+      if (s.sulking) return '牠在生氣，先摸摸牠';
+      if (s.stats.energy < BALANCE.minEnergyToPlay) return '牠太累了，讓牠睡一下';
+      return null;
+    case 'bath':
+      return null;
+    case 'sleep':
+      if (s.sick) return '先餵藥再睡吧';
+      if (!s.sleeping && s.stats.energy >= 100) return '牠還不睏';
+      return null;
+    case 'medicine':
+      if (!s.sick) return '牠沒有生病';
+      return null;
+  }
+}
+
+export function feed(s: PetState): PetState {
+  if (canDo(s, 'feed')) return s;
+  const next = startActivity(s, 'eating', BALANCE.feed.duration);
+  return {
+    ...next,
+    stats: { ...s.stats, hunger: clamp(s.stats.hunger + BALANCE.feed.hunger) },
+    zeroFor: { ...s.zeroFor, hunger: 0 },
+  };
+}
+
+export function play(s: PetState): PetState {
+  if (canDo(s, 'play')) return s;
+  const next = startActivity(s, 'playing', BALANCE.play.duration);
+  return {
+    ...next,
+    stats: {
+      ...s.stats,
+      happiness: clamp(s.stats.happiness + BALANCE.play.happiness),
+      energy: clamp(s.stats.energy + BALANCE.play.energy),
+    },
+    zeroFor: { ...s.zeroFor, happiness: 0 },
+  };
+}
+
+export function toggleSleep(s: PetState): PetState {
+  if (s.sleeping) return wake(s);
+  if (canDo(s, 'sleep')) return s;
+  return { ...s, sleeping: true, bathing: false, activity: 'idle', activityLeft: 0 };
+}
+
+/** 被叫醒會有點不開心 */
+export function wake(s: PetState): PetState {
+  if (!s.sleeping) return s;
+  return {
+    ...s,
+    sleeping: false,
+    stats: {
+      ...s.stats,
+      happiness: clamp(s.stats.happiness - BALANCE.sleep.wakeHappinessPenalty),
+    },
+  };
+}
+
+export function giveMedicine(s: PetState): PetState {
+  if (canDo(s, 'medicine')) return s;
+  const next = startActivity(s, 'medicine', BALANCE.medicine.duration);
+  return { ...next, sick: false, zeroFor: { ...s.zeroFor, hunger: 0, cleanliness: 0 } };
+}
+
+export function setBathing(s: PetState, on: boolean): PetState {
+  if (on && canDo(s, 'bath')) return s;
+  return { ...s, bathing: on };
+}
+
+/** 洗澡時手指滑動的距離（像素） */
+export function scrub(s: PetState, pixels: number): PetState {
+  if (!s.bathing) return s;
+  const cleanliness = clamp(s.stats.cleanliness + pixels * BALANCE.bathPerPixel);
+  return {
+    ...s,
+    stats: { ...s.stats, cleanliness },
+    zeroFor: { ...s.zeroFor, cleanliness: 0 },
+    bathing: cleanliness < 100,
+  };
+}
+
+/** 摸摸：head = 摸頭，否則摸身體 */
+export function petPet(s: PetState, part: 'head' | 'body'): { state: PetState; gained: number } {
+  if (s.sleeping) return { state: wake(s), gained: 0 };
+  if (s.bathing || isBusy(s)) return { state: s, gained: 0 };
+
+  if (s.sulking) {
+    const sulkPets = s.sulkPets + 1;
+    if (sulkPets >= BALANCE.sulk.petsToForgive) {
+      const next = startActivity(s, 'petHead', BALANCE.pet.duration);
+      return {
+        state: {
+          ...next,
+          sulking: false,
+          sulkPets: 0,
+          zeroFor: { ...s.zeroFor, happiness: 0 },
+          stats: { ...s.stats, happiness: BALANCE.sulk.forgiveHappiness },
+        },
+        gained: BALANCE.sulk.forgiveHappiness,
+      };
+    }
+    return { state: startActivity({ ...s, sulkPets }, 'refuse', 0.6), gained: 0 };
+  }
+
+  if (s.sick) return { state: s, gained: 0 };
+
+  const next = startActivity(s, part === 'head' ? 'petHead' : 'petBody', BALANCE.pet.duration);
+  return {
+    state: {
+      ...next,
+      stats: { ...s.stats, happiness: clamp(s.stats.happiness + BALANCE.pet.happiness) },
+      zeroFor: { ...s.zeroFor, happiness: 0 },
+    },
+    gained: BALANCE.pet.happiness,
+  };
+}
+
+// ---------- 狀態判斷（給泡泡文字與動畫用） ----------
+
+/** 依優先順序列出目前所有問題 */
+export function getIssues(s: PetState): IssueKey[] {
+  const list: IssueKey[] = [];
+  if (s.sick) list.push('sick');
+  if (s.sulking) list.push('sulking');
+  if (s.sleeping) list.push('sleeping');
+  if (s.stats.hunger <= 0) list.push('hungry');
+  if (s.stats.energy <= 0) list.push('tired');
+  if (s.stats.cleanliness <= 0) list.push('dirty');
+  if (!s.sulking && s.stats.happiness < BALANCE.lowThreshold) list.push('bored');
+  return list;
+}
