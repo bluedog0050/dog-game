@@ -6,6 +6,7 @@ import { petRuntime } from './petRuntime';
 import { useGameStore } from '../store/useGameStore';
 import { BALANCE } from '../data/balance';
 import type { Activity } from '../game/types';
+import { FETCH, fetchTimeline, type FetchTimeline } from '../game/fetch';
 
 const { damp } = THREE.MathUtils;
 const TAU = Math.PI * 2;
@@ -37,12 +38,13 @@ export function Pet() {
   const ball = useRef<THREE.Mesh>(null!);
   const bowl = useRef<THREE.Group>(null!);
   const pill = useRef<THREE.Group>(null!);
+  const marker = useRef<THREE.Mesh>(null!);
 
   // 動畫狀態（平滑插值用）
   const anim = useRef({
     actKey: '',
     actStart: 0,
-    ballTarget: new THREE.Vector3(),
+    tl: null as FetchTimeline | null,
     nextBlink: 1,
     blinkUntil: 0,
     tiltTarget: 0,
@@ -63,9 +65,12 @@ export function Pet() {
   const bowlMat = useMemo(() => mat('#7fb3e0'), []);
   const foodMat = useMemo(() => mat('#c98b52'), []);
   const pillA = useMemo(() => mat('#ff8fa3'), []);
+  const markerMat = useMemo(
+    () => new THREE.MeshBasicMaterial({ color: '#ff8a65', transparent: true, opacity: 0.55, depthWrite: false }),
+    [],
+  );
   const pillB = useMemo(() => mat('#ffffff'), []);
 
-  const tmp = useMemo(() => new THREE.Vector3(), []);
 
   // ---------- 觸控 ----------
   const dragging = useRef<{ x: number; y: number } | null>(null);
@@ -88,8 +93,9 @@ export function Pet() {
   };
 
   const onDown = (e: ThreeEvent<PointerEvent>) => {
-    e.stopPropagation();
     const st = useGameStore.getState();
+    if (st.pet.aiming) return; // 瞄準時點到狗也算丟球，交給 AimHandler
+    e.stopPropagation();
     if (st.pet.bathing) {
       dragging.current = { x: e.nativeEvent.clientX, y: e.nativeEvent.clientY };
       petRuntime.bubbleQueue.push(e.point.clone());
@@ -129,10 +135,7 @@ export function Pet() {
     if (key !== a.actKey) {
       a.actKey = key;
       a.actStart = t;
-      if (s.activity === 'playing') {
-        const side = Math.random() < 0.5 ? -1 : 1;
-        a.ballTarget.set(side * (0.5 + Math.random() * 0.6), 0.12, -1.1 - Math.random() * 0.6);
-      }
+      a.tl = s.activity === 'playing' && s.ballTarget ? fetchTimeline(s.ballTarget) : null;
     }
     const act: Activity = s.activityLeft > 0 ? s.activity : 'idle';
     const at = t - a.actStart; // 動作已進行秒數
@@ -296,58 +299,82 @@ export function Pet() {
         break;
       }
       case 'playing': {
-        const p = at; // 秒
-        const T = a.ballTarget;
-        const stop = tmp.copy(T).setY(0);
-        const dir = Math.atan2(stop.x, stop.z);
-        // 停在球前 0.35
-        const stopX = stop.x - Math.sin(dir) * 0.35;
-        const stopZ = stop.z - Math.cos(dir) * 0.35;
+        const tl = a.tl;
+        if (!tl) break;
+        const T = tl.target;
+        const B = ball.current.position;
+        const R = 0.12; // 球半徑
+        const dirOut = Math.atan2(tl.stop.x, tl.stop.z);
+        const dirBack = Math.atan2(-tl.stop.x, -tl.stop.z);
+        const grabAt = tl.arrive + FETCH.grab * 0.5;
         ballVisible = true;
-        if (p < 0.6) {
-          // 球飛出去
-          const q = p / 0.6;
-          ball.current.position.set(
-            THREE.MathUtils.lerp(0.3, T.x, q),
-            THREE.MathUtils.lerp(1.6, T.y, q) + Math.sin(q * Math.PI) * 1.0,
-            THREE.MathUtils.lerp(2.5, T.z, q),
-          );
-          faceY = dir * ease(q);
-          headX = -0.3;
-        } else if (p < 1.5) {
-          const q = seg(p, 0.6, 1.5);
-          posX = stopX * q;
-          posZ = stopZ * q;
-          faceY = dir;
+
+        // 寵物位置與朝向
+        if (at < tl.runStart) {
+          faceY = dirOut;
+          headX = -0.35; // 抬頭看球飛
+          bodyY = Math.max(0, Math.sin(at * 12)) * 0.08;
+        } else if (at < tl.arrive) {
+          const q = (at - tl.runStart) / (tl.arrive - tl.runStart);
+          posX = tl.stop.x * q;
+          posZ = tl.stop.z * q;
+          faceY = dirOut;
           legSwing = 1;
-          ball.current.position.set(T.x, T.y + Math.abs(Math.sin(p * 9)) * 0.15 * (1.5 - p), T.z);
-        } else if (p < 1.8) {
-          posX = stopX;
-          posZ = stopZ;
-          faceY = dir;
-          headX = 0.5;
-          ball.current.position.set(T.x, T.y, T.z);
-        } else if (p < 2.9) {
-          const q = seg(p, 1.8, 2.9);
-          posX = stopX * (1 - q);
-          posZ = stopZ * (1 - q);
-          faceY = q < 0.15 ? dir + (dir > 0 ? 1 : -1) * Math.PI * (q / 0.15) : dir + (dir > 0 ? Math.PI : -Math.PI);
-          if (q > 0.7) faceY = THREE.MathUtils.lerp(faceY, 0, (q - 0.7) / 0.3);
+        } else if (at < tl.returnStart) {
+          posX = tl.stop.x;
+          posZ = tl.stop.z;
+          faceY = at < tl.grabEnd ? dirOut : dirBack;
+          if (at < tl.grabEnd) headX = 0.6; // 低頭叼球
+        } else if (at < tl.home) {
+          const q = (at - tl.returnStart) / (tl.home - tl.returnStart);
+          posX = tl.stop.x * (1 - q);
+          posZ = tl.stop.z * (1 - q);
+          faceY = dirBack;
           legSwing = 1;
-          ball.current.position.copy(petRuntime.mouth);
         } else {
-          const q = seg(p, 2.9, 3.4);
-          bodyY = Math.sin(q * Math.PI) * 0.3;
-          ballVisible = q < 0.3;
-          ball.current.position.copy(petRuntime.mouth);
+          // 回到原位：轉向你、開心跳
+          const q = seg(at, tl.home, tl.total);
+          faceY = 0;
+          bodyY = Math.abs(Math.sin(q * Math.PI * 2)) * 0.25;
           tongueOut = 1;
+          eyeOpen = 0.25;
         }
+
+        // 球的位置
+        if (at < tl.land) {
+          const q = at / tl.land;
+          const dist = Math.hypot(T.x - FETCH.origin.x, T.z - FETCH.origin.z);
+          B.set(
+            THREE.MathUtils.lerp(FETCH.origin.x, T.x, q),
+            THREE.MathUtils.lerp(FETCH.origin.y, R, q) + Math.sin(q * Math.PI) * (0.5 + dist * 0.22),
+            THREE.MathUtils.lerp(FETCH.origin.z, T.z, q),
+          );
+          ball.current.rotation.x -= dt * 12;
+        } else if (at < grabAt) {
+          // 落地彈跳
+          const k = at - tl.land;
+          B.set(T.x, R + Math.abs(Math.sin(k * 9)) * 0.3 * Math.exp(-k * 3.5), T.z);
+        } else if (at < tl.home + 0.35) {
+          B.copy(petRuntime.mouth); // 叼在嘴裡
+        } else {
+          // 放下球，滾到你面前
+          const k = at - (tl.home + 0.35);
+          B.set(petRuntime.position.x, R + Math.abs(Math.sin(k * 8)) * 0.15 * Math.exp(-k * 4), petRuntime.position.z + 0.55 + k * 0.4);
+        }
+
+        // 落點標記
+        marker.current.visible = at < tl.land + 0.5;
+        marker.current.position.set(T.x, 0.03, T.z);
+        const ms = 0.25 + (at < tl.land ? 0.15 * (1 - at / tl.land) : 0) + Math.sin(t * 10) * 0.02;
+        marker.current.scale.setScalar(ms);
+
         wagSpeed = 22;
         wagAmp = 0.6;
         lie = 0;
         break;
       }
     }
+    if (act !== 'playing') marker.current.visible = false;
 
     // ---------- 套用 ----------
     const r = root.current;
@@ -355,12 +382,8 @@ export function Pet() {
     r.position.z = act === 'playing' ? posZ : damp(r.position.z, posZ, 6, dt);
     // 轉向取最短路徑
     let df = faceY - a.faceY;
-    if (act !== 'playing') {
-      df = ((df + Math.PI) % TAU + TAU) % TAU - Math.PI;
-      a.faceY += df * Math.min(1, dt * 6);
-    } else {
-      a.faceY = damp(a.faceY, faceY, 12, dt);
-    }
+    df = (((df + Math.PI) % TAU) + TAU) % TAU - Math.PI;
+    a.faceY += df * Math.min(1, dt * (act === 'playing' ? 10 : 6));
     r.rotation.y = a.faceY;
     petRuntime.position.copy(r.position);
 
@@ -525,6 +548,11 @@ export function Pet() {
       {/* 球 */}
       <mesh ref={ball} geometry={GEO.ball} material={ballMat} scale={0.12} visible={false} castShadow>
         <mesh geometry={GEO.ball} material={ballStripe} scale={[1.02, 0.25, 1.02]} />
+      </mesh>
+
+      {/* 球的落點標記 */}
+      <mesh ref={marker} material={markerMat} rotation={[-Math.PI / 2, 0, 0]} visible={false}>
+        <ringGeometry args={[0.7, 1, 20]} />
       </mesh>
 
       {/* 飯碗 */}

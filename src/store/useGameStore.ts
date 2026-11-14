@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import * as G from '../game/pet';
+import { fetchTimeline } from '../game/fetch';
 import type { PetState } from '../game/types';
 import { loadSave, writeSave } from '../persistence/storage';
 import { setSoundEnabled, sfx } from '../audio/sfx';
@@ -24,6 +25,8 @@ interface GameStore {
   doAction: (a: G.ActionKey) => void;
   touchPet: (part: 'head' | 'body') => void;
   scrub: (pixels: number) => void;
+  /** 瞄準模式下點畫面：把球丟到地板上的 (x, z) */
+  throwBall: (x: number, z: number) => void;
   returnAfterAway: (seconds: number) => void;
   setName: (n: string) => void;
   toggleSound: () => void;
@@ -78,6 +81,10 @@ export const useGameStore = create<GameStore>((set, get) => {
         toast('被叫醒了…有點不開心');
         return;
       }
+      if (a === 'play' && s.aiming) {
+        set({ pet: G.cancelAiming(s) });
+        return;
+      }
       if (a === 'bath' && s.bathing) {
         set({ pet: G.setBathing(s, false) });
         return;
@@ -95,10 +102,8 @@ export const useGameStore = create<GameStore>((set, get) => {
           float('🍖 +50');
           break;
         case 'play':
-          set({ pet: G.play(s) });
-          sfx.throwBall();
-          setTimeout(() => sfx.bark(), 1700);
-          float('🎾 +40');
+          set({ pet: G.startAiming(s) });
+          toast('點一下畫面，把球丟過去 🎾');
           break;
         case 'bath':
           set({ pet: G.setBathing(s, true) });
@@ -157,6 +162,21 @@ export const useGameStore = create<GameStore>((set, get) => {
         float('✨ 洗乾淨了！');
         set((x) => ({ heartBurst: x.heartBurst + 1 }));
       }
+    },
+
+    throwBall: (x, z) => {
+      const s = get().pet;
+      const next = G.throwBall(s, { x, z });
+      if (next === s) return;
+      set({ pet: next });
+      sfx.throwBall();
+      const tl = fetchTimeline(next.ballTarget!);
+      setTimeout(() => sfx.bark(), tl.grabEnd * 1000);
+      setTimeout(() => {
+        sfx.happy();
+        float('🎾 +40');
+        set((x) => ({ heartBurst: x.heartBurst + 1 }));
+      }, tl.home * 1000);
     },
 
     returnAfterAway: (seconds) => {

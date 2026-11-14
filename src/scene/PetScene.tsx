@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { Room } from './Room';
 import { Pet } from './Pet';
 import { Effects } from './Effects';
+import { AimHandler } from './AimHandler';
 import { useGameStore } from '../store/useGameStore';
 
 /** 依螢幕比例調整視角，直式手機也看得到整隻寵物與丟球範圍 */
@@ -72,6 +73,7 @@ export function PetScene() {
       }}
     >
       <CameraRig />
+      <AimHandler />
       <Lights />
       <Room />
       <Pet />

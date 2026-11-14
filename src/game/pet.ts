@@ -1,6 +1,7 @@
 // 純遊戲邏輯：不依賴 React、3D 或瀏覽器，可單獨測試。
 import { BALANCE, DECAY_PER_SEC, type StatKey } from '../data/balance';
 import type { Activity, IssueKey, PetState } from './types';
+import { fetchTimeline, type Point } from './fetch';
 
 const clamp = (v: number) => Math.max(0, Math.min(100, v));
 const KEYS: StatKey[] = ['hunger', 'happiness', 'energy', 'cleanliness'];
@@ -18,6 +19,8 @@ export function createPet(): PetState {
     activityLeft: 0,
     activityStartedAt: 0,
     bathing: false,
+    aiming: false,
+    ballTarget: null,
     time: 0,
   };
 }
@@ -39,6 +42,7 @@ export function tick(s: PetState, dt: number): PetState {
     activityLeft = Math.max(0, activityLeft - dt);
     if (activityLeft === 0) activity = 'idle';
   }
+  const ballTarget = activity === 'playing' ? s.ballTarget : null;
 
   // 生病時所有數值暫停下降，給玩家時間餵藥
   if (!sick) {
@@ -85,6 +89,9 @@ export function tick(s: PetState, dt: number): PetState {
     sick,
     sulking,
     sulkPets: sulking ? s.sulkPets : 0,
+    // 生病、鬧脾氣、睡著時取消瞄準
+    aiming: s.aiming && !sick && !sulking && !sleeping,
+    ballTarget,
     activity,
     activityLeft,
     time: s.time + dt,
@@ -137,11 +144,45 @@ export function feed(s: PetState): PetState {
   };
 }
 
-export function play(s: PetState): PetState {
+/** 進入瞄準模式，等玩家點畫面決定丟球方向 */
+export function startAiming(s: PetState): PetState {
   if (canDo(s, 'play')) return s;
-  const next = startActivity(s, 'playing', BALANCE.play.duration);
+  return { ...s, aiming: true, bathing: false };
+}
+
+export function cancelAiming(s: PetState): PetState {
+  return { ...s, aiming: false };
+}
+
+/** 把落點限制在房間地板內，且不會離寵物太近 */
+export function clampBallTarget(p: Point): Point {
+  const A = BALANCE.ballArea;
+  let x = Math.max(A.minX, Math.min(A.maxX, p.x));
+  let z = Math.max(A.minZ, Math.min(A.maxZ, p.z));
+  const d = Math.hypot(x, z);
+  if (d < BALANCE.ballMinDistance) {
+    // 太近：往同方向推遠一點（點在正中間就往後丟）
+    const k = d > 0.001 ? BALANCE.ballMinDistance / d : 0;
+    if (k) {
+      x *= k;
+      z *= k;
+    } else {
+      z = -BALANCE.ballMinDistance;
+    }
+  }
+  return { x, z };
+}
+
+/** 丟球：寵物會跑去撿回來 */
+export function throwBall(s: PetState, target: Point): PetState {
+  if (!s.aiming || canDo(s, 'play')) return s;
+  const t = clampBallTarget(target);
+  const tl = fetchTimeline(t);
+  const next = startActivity(s, 'playing', tl.total);
   return {
     ...next,
+    aiming: false,
+    ballTarget: t,
     stats: {
       ...s.stats,
       happiness: clamp(s.stats.happiness + BALANCE.play.happiness),
@@ -154,7 +195,7 @@ export function play(s: PetState): PetState {
 export function toggleSleep(s: PetState): PetState {
   if (s.sleeping) return wake(s);
   if (canDo(s, 'sleep')) return s;
-  return { ...s, sleeping: true, bathing: false, activity: 'idle', activityLeft: 0 };
+  return { ...s, sleeping: true, bathing: false, aiming: false, activity: 'idle', activityLeft: 0 };
 }
 
 /** 被叫醒會有點不開心 */
@@ -178,7 +219,7 @@ export function giveMedicine(s: PetState): PetState {
 
 export function setBathing(s: PetState, on: boolean): PetState {
   if (on && canDo(s, 'bath')) return s;
-  return { ...s, bathing: on };
+  return { ...s, bathing: on, aiming: on ? false : s.aiming };
 }
 
 /** 洗澡時手指滑動的距離（像素） */
@@ -196,7 +237,7 @@ export function scrub(s: PetState, pixels: number): PetState {
 /** 摸摸：head = 摸頭，否則摸身體 */
 export function petPet(s: PetState, part: 'head' | 'body'): { state: PetState; gained: number } {
   if (s.sleeping) return { state: wake(s), gained: 0 };
-  if (s.bathing || isBusy(s)) return { state: s, gained: 0 };
+  if (s.bathing || s.aiming || isBusy(s)) return { state: s, gained: 0 };
 
   if (s.sulking) {
     const sulkPets = s.sulkPets + 1;

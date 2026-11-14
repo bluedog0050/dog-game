@@ -472,3 +472,7 @@ button {
 .app.bathing .scene {
   cursor: grab;
 }
+
+.app.aiming .scene {
+  cursor: crosshair;
+}

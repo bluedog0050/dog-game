@@ -7,7 +7,7 @@ export function ActionBar() {
 
   const buttons: { key: ActionKey; icon: string; label: string }[] = [
     { key: 'feed', icon: '🍖', label: '餵食' },
-    { key: 'play', icon: '🎾', label: '玩球' },
+    { key: 'play', icon: pet.aiming ? '✖️' : '🎾', label: pet.aiming ? '取消' : '玩球' },
     { key: 'bath', icon: pet.bathing ? '✅' : '🛁', label: pet.bathing ? '洗好了' : '洗澡' },
     { key: 'sleep', icon: pet.sleeping ? '☀️' : '💤', label: pet.sleeping ? '叫醒' : '睡覺' },
     { key: 'medicine', icon: '💊', label: '餵藥' },
@@ -16,7 +16,8 @@ export function ActionBar() {
   return (
     <nav className="actionbar">
       {buttons.map((b) => {
-        const special = (b.key === 'sleep' && pet.sleeping) || (b.key === 'bath' && pet.bathing);
+        const special =
+          (b.key === 'sleep' && pet.sleeping) || (b.key === 'bath' && pet.bathing) || (b.key === 'play' && pet.aiming);
         const disabled = !special && canDo(pet, b.key) !== null;
         const urgent = b.key === 'medicine' && pet.sick;
         return (

@@ -28,6 +28,10 @@ export interface PetState {
   activityStartedAt: number;
   /** 洗澡模式 */
   bathing: boolean;
+  /** 瞄準模式：等玩家點畫面丟球 */
+  aiming: boolean;
+  /** 球的落點（丟球動作進行中才有） */
+  ballTarget: { x: number; z: number } | null;
   /** 遊戲內經過的總秒數 */
   time: number;
 }

@@ -4,10 +4,10 @@ export type StatKey = 'hunger' | 'happiness' | 'energy' | 'cleanliness';
 
 /** 每項數值從 100 掉到 0 所需秒數（彼此錯開，避免同時崩潰） */
 export const SECONDS_TO_EMPTY: Record<StatKey, number> = {
-  happiness: 30,
-  hunger: 60,
-  energy: 90,
-  cleanliness: 120,
+  happiness: 90,
+  hunger: 180,
+  energy: 270,
+  cleanliness: 360,
 };
 
 export const DECAY_PER_SEC: Record<StatKey, number> = {
@@ -26,7 +26,7 @@ export const BALANCE = {
   lowThreshold: 20,
 
   feed: { hunger: 50, duration: 2.4 },
-  play: { happiness: 40, energy: -10, duration: 3.4 },
+  play: { happiness: 40, energy: -10 },
   pet: { happiness: 8, duration: 1.2 },
   /** 洗澡：手指在寵物身上滑動，每滑過 1 像素增加的清潔度 */
   bathPerPixel: 0.12,
@@ -53,6 +53,11 @@ export const BALANCE = {
     /** 飽食或清潔歸零幾秒後生病 */
     triggerAfter: 10,
   },
+
+  /** 丟球：球可以落地的範圍（房間地板） */
+  ballArea: { minX: -3.1, maxX: 3.1, minZ: -2.6, maxZ: 2.4 },
+  /** 球距離寵物至少這麼遠 */
+  ballMinDistance: 0.6,
 
   /** 不能玩耍的最低體力 */
   minEnergyToPlay: 5,

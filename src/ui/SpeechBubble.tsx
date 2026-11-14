@@ -20,9 +20,9 @@ export function SpeechBubble() {
     return () => clearInterval(id);
   }, []);
 
-  const key = pet.bathing ? 'bath' : busy && ACTIVITY_LINES[busy] ? `act:${busy}` : top ?? 'happy';
+  const key = pet.bathing ? 'bath' : pet.aiming ? 'aim' : busy && ACTIVITY_LINES[busy] ? `act:${busy}` : top ?? 'happy';
   const text = useMemo(() => {
-    if (key === 'bath') return '';
+    if (key === 'bath' || key === 'aim') return '';
     if (key.startsWith('act:')) return ACTIVITY_LINES[key.slice(4)]!;
     if (key === 'happy') return pick(HAPPY_LINES);
     return pick(ISSUE_INFO[top!].lines);
@@ -32,11 +32,13 @@ export function SpeechBubble() {
   let line = text;
   if (pet.bathing) {
     line = `搓搓搓～ ${Math.floor(pet.stats.cleanliness)}%`;
+  } else if (pet.aiming) {
+    line = '快丟！快丟！（點畫面丟球）';
   } else if (key === 'sulking') {
     line = `${text}（再摸 ${BALANCE.sulk.petsToForgive - pet.sulkPets} 下）`;
   }
 
-  const icon = pet.bathing ? '🧼' : key.startsWith('act:') || key === 'happy' ? '' : ISSUE_INFO[top!].icon;
+  const icon = pet.bathing ? '🧼' : pet.aiming ? '🎾' : key.startsWith('act:') || key === 'happy' ? '' : ISSUE_INFO[top!].icon;
   const others = issues.slice(1).filter((k) => k !== 'sleeping');
   const tone = top === 'sick' ? 'danger' : top === 'sulking' ? 'warn' : top && top !== 'sleeping' ? 'need' : 'ok';
 
@@ -46,7 +48,7 @@ export function SpeechBubble() {
         {icon && <span className="bubble-icon">{icon}</span>}
         <span>{line}</span>
       </div>
-      {others.length > 0 && !pet.bathing && (
+      {others.length > 0 && !pet.bathing && !pet.aiming && (
         <div className="other-issues" aria-label="其他需要照顧的事">
           {others.map((k) => (
             <span key={k} className="issue-chip">{ISSUE_INFO[k].icon}</span>

@@ -11,6 +11,7 @@ import { useGameStore } from './store/useGameStore';
 export default function App() {
   useGameLoop();
   const bathing = useGameStore((s) => s.pet.bathing);
+  const aiming = useGameStore((s) => s.pet.aiming);
 
   // iOS 需要使用者觸碰後才能播放聲音
   useEffect(() => {
@@ -20,7 +21,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className={`app${bathing ? ' bathing' : ''}`}>
+    <div className={`app${bathing ? ' bathing' : ''}${aiming ? ' aiming' : ''}`}>
       <div className="scene">
         <PetScene />
       </div>
