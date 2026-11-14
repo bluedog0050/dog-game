@@ -3,7 +3,7 @@ import * as G from '../game/pet';
 import { fetchTimeline } from '../game/fetch';
 import { BALANCE } from '../data/balance';
 import type { PetState } from '../game/types';
-import { loadSave, writeSave } from '../persistence/storage';
+import { DEFAULT_NAME, loadSave, writeSave } from '../persistence/storage';
 import { setSoundEnabled, sfx } from '../audio/sfx';
 
 interface Floater {
@@ -194,7 +194,7 @@ export const useGameStore = create<GameStore>((set, get) => {
     },
 
     setName: (n) => {
-      const name = n.trim().slice(0, 10) || '小白';
+      const name = n.trim().slice(0, 10) || DEFAULT_NAME;
       set({ name });
       writeSave({ name, sound: get().sound });
     },
