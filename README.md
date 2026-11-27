@@ -2,6 +2,8 @@
 
 手機網頁 3D 電子寵物（白色狐狸犬，low-poly 程式建模）。
 
+👉 立即遊玩：<https://bluedog0050.github.io/dog-game/>
+
 ## 玩法
 
 | 數值 | 100→0 時間 | 回復方式 |
